@@ -1,4 +1,4 @@
-#Instal and load the required packages
+#Install and load the required packages
 install.packages(Signac)
 library(Signac)
 install.packages(Seurat)
