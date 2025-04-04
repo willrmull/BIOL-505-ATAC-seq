@@ -1,0 +1,6 @@
+sra='SRR14141669'
+
+for i in $sra 
+do
+	fastq-dump --split-files --gzip --origfmt $i &> $i.log
+done
