@@ -1,3 +1,4 @@
+#! /bin/bash
 sra='SRR14141669'
 
 for i in $sra 
