@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
+
 ##-t $tag: input ChIP-seq reads in BED format.
 
 ##-f BED: specifies BED input format.
@@ -85,5 +85,5 @@ rm -f $pval_bedgraph $pval_bedgraph_srt
 ## Deletes temporary signal tracks.
 
 rm -f "$prefix"_treat_pileup.bdg "$prefix"_control_lambda.bdg
-"""
+
 
