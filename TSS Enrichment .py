@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
+
 #bam_file: Path to a BAM file containing aligned reads.
 
 #tss: A BED file with TSS positions.
@@ -116,5 +116,5 @@ def make_tss_plot(bam_file, tss, prefix, chromsizes, read_len, bins=400, bp_edge
 
     return tss_plot_file, tss_plot_large_file, tss_log_file
 
-"""
+
 
