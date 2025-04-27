@@ -1,9 +1,0 @@
-#! /bin/bash
-
-module load conda
-module load fastqc
-module load java/23
-
-fastqc SRR14141669_1.fastq.gz -o fastqc_output/ 
-fastqc SRR14141669_2.fastq.gz -o fastqc_output/ 
-
