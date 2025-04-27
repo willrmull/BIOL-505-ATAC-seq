@@ -20,6 +20,9 @@
 
 ##--call-summits: refines peak regions to highest point.
 
+#Convert the bam file to BEDPE
+macs2 randsample -i <sample>.shifted.bam -f BAMPE -p 100 -o <sample>.bed
+
 macs2 callpeak \
     -t $tag -f BED -n "$prefix" -g "$gensz" -p $pval_thresh \
     --shift $shiftsize  --extsize $smooth_window --nomodel -B --SPMR --keep-dup all --call-summits
