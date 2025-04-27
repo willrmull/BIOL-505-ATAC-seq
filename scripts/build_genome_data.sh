@@ -174,7 +174,7 @@ elif [[ "${GENOME}" == "YOUR_OWN_GENOME" ]]; then
   # URL for your reference FASTA (fasta, fasta.gz, fa, fa.gz, 2bit)
   
   ######Add our genome here
-  REF_FA="https://some.where.com/your.genome.fa.gz"
+  REF_FA="https://github.com/willrmull/BIOL-505-ATAC-seq/blob/e53893fbdc689d5a96a40f593403863bb1e186f6/Kallima_inachus.Genome.fa"
   # 3-col blacklist BED file to filter out overlapping peaks from b-filt peak file (.bfilt.*Peak.gz file).
   # leave it empty if you don't have one
   BLACKLIST=
