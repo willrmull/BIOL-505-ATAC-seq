@@ -156,6 +156,7 @@ elif [[ "${GENOME}" == "mm10_chr19_chrM" ]]; then
     ENH="https://www.encodeproject.org/files/ENCFF580RGZ/@@download/ENCFF580RGZ.bed.gz"
   fi
 
+######e this
 elif [[ "${GENOME}" == "YOUR_OWN_GENOME" ]]; then
   # Perl style regular expression to keep regular chromosomes only.
   # this reg-ex will be applied to peaks after blacklist filtering (b-filt) with "grep -P".
@@ -171,6 +172,8 @@ elif [[ "${GENOME}" == "YOUR_OWN_GENOME" ]]; then
   # mitochondrial chromosome name (e.g. chrM, MT)
   MITO_CHR_NAME="chrM"
   # URL for your reference FASTA (fasta, fasta.gz, fa, fa.gz, 2bit)
+  
+  ######Add our genome here
   REF_FA="https://some.where.com/your.genome.fa.gz"
   # 3-col blacklist BED file to filter out overlapping peaks from b-filt peak file (.bfilt.*Peak.gz file).
   # leave it empty if you don't have one
