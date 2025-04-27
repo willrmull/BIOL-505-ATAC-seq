@@ -1,8 +1,0 @@
-#! /bin/bash
-
-module load conda
-module load fastqc
-module load java/23
-
-fastqc trimmed_output_1.fastq.gz -o fastqc_output/ 
-fastqc trimmed_output_2.fastq.gz -o fastqc_output/ 
