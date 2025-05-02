@@ -82,7 +82,7 @@ struct RuntimeEnvironment {
 
         # group: input_genomic_data
         Boolean? paired_end 
-        Array[Boolean] paired_ends = [T]
+        Array[Boolean] paired_ends = [true]
         Array[File] fastqs_rep1_R1 = [s3://sra-pub-src-16/SRR13566303/ATAC028_DpM5thHD2_R1.fastq.gz.1]
         Array[File] fastqs_rep1_R2 = [s3://sra-pub-src-16/SRR13566303/ATAC028_DpM5thHD2_R2.fastq.gz.1]
         Array[File] bams = []
@@ -101,18 +101,15 @@ struct RuntimeEnvironment {
         Boolean true_rep_only = false
         Boolean enable_xcor = false
         Boolean enable_count_signal_track = false
-        Boolean enable_idr = true
+        Boolean enable_idr = false
         Boolean enable_preseq = false
         Boolean enable_fraglen_stat = true
         Boolean enable_tss_enrich = true
-        Boolean enable_annot_enrich = true
-        Boolean enable_jsd = true
-        Boolean enable_compare_to_roadmap = false
         Boolean enable_gc_bias = true
 
         # group: adapter_trimming
         String cutadapt_param = '-e 0.1 -m 5'
-        Boolean auto_detect_adapter = false
+        Boolean auto_detect_adapter = true
         String? adapter
         Array[String] adapters_rep1_R1 = []
         Array[String] adapters_rep1_R2 = []
@@ -121,7 +118,7 @@ struct RuntimeEnvironment {
         String dup_marker = 'picard'
         Boolean no_dup_removal = false
         Int mapq_thresh = 30
-        Array[String] filter_chrs = ['chrM', 'MT']
+        filter_chrs = []
         Int subsample_reads = 0
         Int xcor_subsample_reads = 25000000
         Array[Int?] read_len = []
