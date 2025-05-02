@@ -60,7 +60,7 @@ struct RuntimeEnvironment {
         String description = 'No description'
 
         # group: reference_genome
-        File? genome_tsv
+        File? genome_tsv = 
         String? genome_name
         File? ref_fa
         File? ref_mito_fa
