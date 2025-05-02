@@ -74,7 +74,6 @@ struct RuntimeEnvironment {
         File? chrsz
         File? blacklist
         File? blacklist2
-        String? mito_chr_name
         String? regex_bfilt_peak_chr_name
         String? gensz
         File? tss
@@ -190,7 +189,13 @@ struct RuntimeEnvironment {
         String? fraglen_stat_picard_java_heap
         String? gc_bias_picard_java_heap
     }
-
+    #This block of code configures the resource requirements for various tasks in the ENCODE ATAC-seq pipeline. 
+    #It helps the pipeline schedule and run jobs on a compute backend (e.g. a cloud provider, SLURM, or a local workstation) by specifying:
+    #How many CPU cores each task should use
+    #How much memory to allocate (based on genome size)
+    #How much disk space to reserve
+    #Maximum time a task is allowed to run
+    #Optional Java heap size overrides for Picard-based tools
     parameter_meta {
         docker: {
             description: 'Default Docker image URI to run WDL tasks.',
@@ -764,36 +769,23 @@ struct RuntimeEnvironment {
     File? roadmap_meta_ = if defined(roadmap_meta) then roadmap_meta
         else read_genome_tsv.roadmap_meta
 
-    ### temp vars (do not define these)
+    ### temporary variables (do not define these)
     String aligner_ = aligner
     String peak_caller_ = peak_caller
     String peak_type_ = peak_type
-    String idr_rank_ = if peak_caller_=='spp' then 'signal.value'
-                        else if peak_caller_=='macs2' then 'p.value'
-                        else 'p.value'
     Int cap_num_peak_ = cap_num_peak
     Int mapq_thresh_ = mapq_thresh
 
-    # temporary 2-dim fastqs array [rep_id][merge_id]
+    # # Wrap the R1 FASTQ files into a nested array (Array[Array[File]])
     Array[Array[File]] fastqs_R1 = [fastqs_rep1_R1]
-    # no need to do that for R2 (R1 array will be used to determine presense of fastq for each rep)
+    # Same thing with R2 files
     Array[Array[File]] fastqs_R2 = [fastqs_rep1_R2]
     # temporary 2-dim adapters array [rep_id][merge_id]
     Array[Array[String]] adapters_R1 = [adapters_rep1_R1]
     Array[Array[String]] adapters_R2 = [adapters_rep1_R2]
     
-    # temporary variables to get number of replicates
-    #       WDLic implementation of max(A,B,C,...)
-    Int num_rep_fastq = length(fastqs_R1)
-    Int num_rep_bam = if length(bams)<num_rep_fastq then num_rep_fastq
-        else length(bams)
-    Int num_rep_nodup_bam = if length(nodup_bams)<num_rep_bam then num_rep_bam
-        else length(nodup_bams)
-    Int num_rep_ta = if length(tas)<num_rep_nodup_bam then num_rep_nodup_bam
-        else length(tas)
-    Int num_rep_peak = if length(peaks)<num_rep_ta then num_rep_ta
-        else length(peaks)
-    Int num_rep = num_rep_peak
+    # Assume no replicates: only one sample throughout the pipeline
+    Int num_rep = 1
 
     # sanity check for inputs
     if ( num_rep == 0 ) {
@@ -802,77 +794,41 @@ struct RuntimeEnvironment {
             runtime_environment = runtime_environment
         }
     }
-
-    # align each replicate
-    scatter(i in range(num_rep)) {
-        # to override endedness definition for individual replicate
-        #     paired_end will override paired_ends[i]
-        Boolean paired_end_ = if !defined(paired_end) && i<length(paired_ends) then paired_ends[i]
-            else select_first([paired_end])
-
-        Boolean has_input_of_align = i<length(fastqs_R1) && length(fastqs_R1[i])>0
-        Boolean has_output_of_align = i<length(bams)
-        if ( has_input_of_align && !has_output_of_align ) {
-            call align { input :
-                fastqs_R1 = fastqs_R1[i],
-                fastqs_R2 = fastqs_R2[i],
+    # Check if paired_end is defined; otherwise, use the global paired_end value.
+    Boolean paired_end_ = if !defined(paired_end) then select_first([paired_end])
+        else paired_end
+    # Check if there is an input FASTQ file for R1 and R2, and if the BAM output is missing
+    Boolean has_input_of_align = length(fastqs_R1) > 0
+    Boolean has_output_of_align = length(bams) > 0
+    # Only proceed with alignment if there's input and no output already exists
+    if (has_input_of_align && !has_output_of_align) {
+        call align {
+            input:
+                fastqs_R1 = fastqs_R1[0],  # Only using the first (and only) entry
+                fastqs_R2 = fastqs_R2[0],  # Same for R2
                 adapter = adapter,
-                adapters_R1 = adapters_R1[i],
-                adapters_R2 = adapters_R2[i],
+                adapters_R1 = adapters_R1[0],  # Use first adapter for R1
+                adapters_R2 = adapters_R2[0],  # Use first adapter for R2
                 paired_end = paired_end_,
                 auto_detect_adapter = auto_detect_adapter,
                 cutadapt_param = cutadapt_param,
-
+            
                 aligner = aligner_,
                 mito_chr_name = mito_chr_name_,
                 chrsz = chrsz_,
                 multimapping = multimapping,
                 idx_tar = bowtie2_idx_tar_,
-                # resource
+            
+                # Resource settings
                 cpu = align_cpu,
                 mem_factor = align_mem_factor,
                 time_hr = align_time_hr,
                 disk_factor = align_disk_factor,
                 runtime_environment = runtime_environment
-            }
-        }
+    }
+}
+
         File? bam_ = if has_output_of_align then bams[i] else align.bam
-
-        # mito only mapping to get frac mito qc
-        Boolean has_input_of_align_mito = has_input_of_align &&
-            defined(bowtie2_mito_idx_tar_)
-        if ( has_input_of_align_mito ) {
-            call align as align_mito { input :
-                fastqs_R1 = fastqs_R1[i],
-                fastqs_R2 = fastqs_R2[i],
-                adapter = adapter,
-                adapters_R1 = adapters_R1[i],
-                adapters_R2 = adapters_R2[i],
-                paired_end = paired_end_,
-                auto_detect_adapter = auto_detect_adapter,
-                cutadapt_param = cutadapt_param,
-
-                aligner = aligner_,
-                mito_chr_name = mito_chr_name_,
-                chrsz = chrsz_,
-                multimapping = multimapping,
-                idx_tar = bowtie2_mito_idx_tar_,
-                # resource
-                cpu = align_cpu,
-                mem_factor = align_mem_factor,
-                time_hr = align_time_hr,
-                disk_factor = align_disk_factor,
-                runtime_environment = runtime_environment
-            }
-        }
-
-        if ( defined(align.non_mito_samstat_qc) && defined(align_mito.samstat_qc) ) {
-            call frac_mito { input:
-                non_mito_samstat = align.non_mito_samstat_qc,
-                mito_samstat = align_mito.samstat_qc,
-                runtime_environment = runtime_environment
-            }
-        }
 
         Boolean has_input_of_filter = has_output_of_align || defined(align.bam)
         Boolean has_output_of_filter = i<length(nodup_bams)
@@ -943,7 +899,6 @@ struct RuntimeEnvironment {
                 disable_tn5_shift = if pipeline_type=='atac' then false else true,
                 subsample = 0,
                 paired_end = paired_end_,
-                mito_chr_name = mito_chr_name_,
 
                 cpu = bam2ta_cpu,
                 mem_factor = bam2ta_mem_factor,
@@ -956,7 +911,6 @@ struct RuntimeEnvironment {
                 ta = bam2ta_no_dedup.ta,
                 subsample = xcor_subsample_reads,
                 paired_end = paired_end_,
-                mito_chr_name = mito_chr_name_,
 
                 cpu = xcor_cpu,
                 mem_factor = xcor_mem_factor,
@@ -1317,22 +1271,16 @@ struct RuntimeEnvironment {
                 else runtime_environment
         }
     }
-    File? peak_ppr2_ = if has_output_of_call_peak_ppr2 then peak_ppr2
-        else call_peak_ppr2.peak
+    # Use the first replicate's peak file 
+    File? peak1_ = peak_[0]
 
-    # do IDR/overlap on all pairs of two replicates (i,j)
-    #    where i and j are zero-based indices and 0 <= i < j < num_rep
-    scatter( pair in cross(range(num_rep),range(num_rep)) ) {
-        File? peak1_ = peak_[pair.left]
-        File? peak2_ = peak_[pair.right]
-        if ( !align_only && pair.left<pair.right ) {
-            # pair.left = 0-based index of 1st replicate
-            # pair.right = 0-based index of 2nd replicate
-            # Naive overlap on every pair of true replicates
-            call overlap { input :
-                prefix = 'rep'+(pair.left+1)+'_vs_rep'+(pair.right+1),
+    # Only run the overlap task if there's at least one peak file available
+    if ( !align_only ) {
+        call overlap { 
+            input :
+                prefix = 'rep1',  # Prefix will now just be 'rep1' since there's only one replicate
                 peak1 = peak1_,
-                peak2 = peak2_,
+                peak2 = peak1_,  # Since there's only one replicate, compare it to itself
                 peak_pooled = peak_pooled_,
                 peak_type = peak_type_,
                 blacklist = blacklist_,
@@ -1340,66 +1288,25 @@ struct RuntimeEnvironment {
                 regex_bfilt_peak_chr_name = regex_bfilt_peak_chr_name_,
                 ta = pool_ta.ta_pooled,
                 runtime_environment = runtime_environment
-            }
-        }
-        if ( enable_idr && !align_only && pair.left<pair.right ) {
-            # pair.left = 0-based index of 1st replicate
-            # pair.right = 0-based index of 2nd replicate
-            # IDR on every pair of true replicates
-            call idr { input :
-                prefix = 'rep'+(pair.left+1)+'_vs_rep'+(pair.right+1),
-                peak1 = peak1_,
-                peak2 = peak2_,
-                peak_pooled = peak_pooled_,
-                idr_thresh = idr_thresh,
-                peak_type = peak_type_,
-                rank = idr_rank_,
-                blacklist = blacklist_,
-                chrsz = chrsz_,
-                regex_bfilt_peak_chr_name = regex_bfilt_peak_chr_name_,
-                ta = pool_ta.ta_pooled,
-                runtime_environment = runtime_environment
-            }
-        }
     }
-
-    # overlap on pseudo-replicates (pr1, pr2) for each true replicate
+}
+    # Only proceed if alignment and true replicate-only condition are not set
     if ( !align_only && !true_rep_only ) {
-        scatter( i in range(num_rep) ) {
-            call overlap as overlap_pr { input :
-                prefix = 'rep'+(i+1)+'-pr1_vs_rep'+(i+1)+'-pr2',
-                peak1 = peak_pr1_[i],
-                peak2 = peak_pr2_[i],
-                peak_pooled = peak_[i],
+        # As we only have one replicate, we directly compare the pseudo-replicates (pr1, pr2)
+        call overlap as overlap_pr { 
+            input :
+                prefix = 'rep1-pr1_vs_rep1-pr2',  # Only one replicate, so this will be the comparison name
+                peak1 = peak_pr1_[0],  # Use the first pseudo-replicate peaks for the only replicate
+                peak2 = peak_pr2_[0],  # Use the second pseudo-replicate peaks for the only replicate
+                peak_pooled = peak_[0],  # Use the pooled peak for the only replicate
                 peak_type = peak_type_,
                 blacklist = blacklist_,
                 chrsz = chrsz_,
                 regex_bfilt_peak_chr_name = regex_bfilt_peak_chr_name_,
-                ta = ta_[i],
+                ta = ta_[0],  # Use the first (and only) ta for the single replicate
                 runtime_environment = runtime_environment
-            }
-        }
     }
-
-    if ( !align_only && !true_rep_only && enable_idr ) {
-        scatter( i in range(num_rep) ) {
-            # IDR on pseduo replicates
-            call idr as idr_pr { input :
-                prefix = 'rep'+(i+1)+'-pr1_vs_rep'+(i+1)+'-pr2',
-                peak1 = peak_pr1_[i],
-                peak2 = peak_pr2_[i],
-                peak_pooled = peak_[i],
-                idr_thresh = idr_thresh,
-                peak_type = peak_type_,
-                rank = idr_rank_,
-                blacklist = blacklist_,
-                chrsz = chrsz_,
-                regex_bfilt_peak_chr_name = regex_bfilt_peak_chr_name_,
-                ta = ta_[i],
-                runtime_environment = runtime_environment
-            }
-        }
-    }
+}
 
     if ( !align_only && !true_rep_only && num_rep>1 ) {
         # Naive overlap on pooled pseudo replicates
