@@ -1,5 +1,9 @@
+#This input block configures how the pipeline should run, including:
+#What software environment to use (docker, conda, etc.).
+#What reference genome and experimental data to use.
+#Optional tuning parameters for trimming, alignment, peak calling, etc.
 version 1.0
-
+#Provide container or environment info
 struct RuntimeEnvironment {
     String docker
     String singularity
@@ -60,6 +64,7 @@ struct RuntimeEnvironment {
         String description = 'No description'
 
         # group: reference_genome
+        #Choose either a to reference genome TSV file or to define them all manually
         File? genome_tsv = final_danaus_plexippus.tsv
         String? genome_name
         File? ref_fa
@@ -81,6 +86,7 @@ struct RuntimeEnvironment {
         File? roadmap_meta
 
         # group: input_genomic_data
+        #Choose one data type to start with (FASTQ, BAM, etc.).
         Boolean? paired_end 
         Array[Boolean] paired_ends = [true]
         Array[File] fastqs_rep1_R1 = [s3://sra-pub-src-16/SRR13566303/ATAC028_DpM5thHD2_R1.fastq.gz.1]
@@ -95,7 +101,7 @@ struct RuntimeEnvironment {
         File? peak_ppr1
         File? peak_ppr2
 
-        # group: pipeline_parameter
+        # group: set pipeline_parameters
         String pipeline_type = 'atac'
         Boolean align_only = false
         Boolean true_rep_only = false
@@ -109,8 +115,10 @@ struct RuntimeEnvironment {
 
         # group: adapter_trimming
         String cutadapt_param = '-e 0.1 -m 5'
+        #Automatically detect adapters
         Boolean auto_detect_adapter = true
         String? adapter
+        #Or define adapters manually
         Array[String] adapters_rep1_R1 = []
         Array[String] adapters_rep1_R2 = []
         # group: alignment
@@ -125,9 +133,15 @@ struct RuntimeEnvironment {
         Int pseudoreplication_random_seed = 0
 
         # group: peak_calling
+        #limits the maximum number of peaks kept from peak calling.
         Int cap_num_peak = 300000
+        #Sets the p-value threshold for MACS2 peak calling
         Float pval_thresh = 0.01
+        #sets the smoothing window size (in base pairs) used when computing signal for peak calling.
+        #Smoothing helps reduce noise by averaging signals over nearby bases.
         Int smooth_win = 150
+        #Sets the IDR (Irreproducible Discovery Rate) threshold for filtering reproducible peaks between replicates.
+        #there’s a ≤5% chance that a peak is due to noise.
         Float idr_thresh = 0.05
 
         # group: resource_parameter
