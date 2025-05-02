@@ -55,13 +55,13 @@ ln -s ../ref.fa .
 bowtie2-build ref.fa ref.fa
 cd ..
 
-echo "=== Creating TSV file..."
-cat > ${TSV} <<EOF
-genome_name\t${GENOME}
-ref_fa\t${DEST_DIR}/ref.fa
-chrsz\t${DEST_DIR}/${GENOME}.chrom.sizes
-regex_bfilt_peak_chr_name\t${REGEX_BFILT_PEAK_CHR_NAME}
-bowtie2_index\t${DEST_DIR}/bowtie2_index
+echo -e "=== Creating TSV file..."
+cat > "${TSV}" <<EOF
+genome_name	${GENOME}
+ref_fa	${DEST_DIR}/ref.fa
+chrsz	${DEST_DIR}/${GENOME}.chrom.sizes
+regex_bfilt_peak_chr_name	${REGEX_BFILT_PEAK_CHR_NAME}
+bowtie2_index	${DEST_DIR}/bowtie2_index
 EOF
 
 echo "=== Done! TSV file written to ${TSV}"
