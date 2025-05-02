@@ -1,21 +1,20 @@
 #!/bin/bash
-#!!!!!!!!!!!!!!!!!NEEDS TO BE RUN IN AN ENVIRONMENT WITH SAMTOOLS AND BOWTIE2!!!!!!!!!!!!!!!!!!!!!!
 set -e
 
-# give user directions if they enter the wrong arugments
+#give user instructions for how to input arguments if they don't input the correct number
 if [[ "$#" -lt 2 ]]; then
   echo "Usage: ./build_genome_data.sh [GENOME] [DEST_DIR]"
   echo "Example: ./build_genome_data.sh hg38 /your/genome/data/path/hg38"
   exit 2
 fi
 
-# assign first argument as the genome and assign the second variable as an absolute path to the output directory (even if entered as a relative path)
+# assign the first argument as the variable GENOME (is the code referenced later to specify which genome to use)
+#assign the second argument as the output directory (makees it an absolute path regardless of if path entered is relative or absolute)
 GENOME=$1
 DEST_DIR=$(cd $(dirname $2) && pwd -P)/$(basename $2)
 TSV=${DEST_DIR}/${GENOME}.tsv
 
-#if the output directory doesn't exist, create it
-#then navigate to the output directory
+#makes the output directory if it doesn't exist and navigates to it
 mkdir -p ${DEST_DIR}
 cd ${DEST_DIR}
 
@@ -33,31 +32,37 @@ case "$GENOME" in
     REF_FA_URL="http://hgdownload.cse.ucsc.edu/goldenpath/hg19/encodeDCC/referenceSequences/male.hg19.fa.gz"
     REGEX_BFILT_PEAK_CHR_NAME="chr[\dXY]+"
     ;;
-#THIS IS OURS! It is a monarch butterfly genome from ncbi, the regex selects the regular numbered and Z chromosomes from the FASTA headers
+#THIS IS THE ONE WE USE! It is a monarch butterfly genome from ncbi.  The regex selects the header line from only regular chromosomes (not fragments)
   dp)
     REF_FA_URL="https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/018/135/715/GCF_018135715.1_MEX_DaPlex/GCF_018135715.1_MEX_DaPlex_genomic.fna.gz"
-    REGEX_BFILT_PEAK_CHR_NAME="chromosome\s(\d+|Z).*"
+    REGEX_BFILT_PEAK_CHR_NAME="^>NC_[^\s]+.*?(chromosome \d+|chromosome [A-Z])"
     ;;
-#if the genome isn't defined here, print an error 
   *)
     echo "Unsupported genome: $GENOME"
     exit 1
     ;;
 esac
 
-#Download the FASTA from the URL defined above
+#Get the .gz genome from the URL specified above (NCBI in our case) and decompress
 echo "=== Downloading reference FASTA for ${GENOME}..."
 wget -c -O ref.fa.gz "$REF_FA_URL"
 gunzip -f ref.fa.gz
 
+#uses samtools to reference the reference genome.  It outputs a file titled ref.fa.fai containing:
+##### sequence name (of each chromosome)
+##### length of sequence in bp
+##### the offset of the sequence (aka the position in the file (in bytes) that the sequence starts at, like a location marker)
+##### number of base pairs per line
+##### number of characters per line
 echo "=== Indexing FASTA with samtools..."
 samtools faidx ref.fa
 
-#creates a file listing each chromosome
+#create a file with just sequence name and number of base pairs from ref.fa.fai
 echo "=== Generating chrom sizes..."
 cut -f1,2 ref.fa.fai > ${GENOME}.chrom.sizes
 
-#create bowtie2 indexes
+#Uses Bowtie2 to make an index of the reference genome
+#indexes are pre-processed, compressed versions of the reference genome that makes alignment go faster
 echo "=== Building Bowtie2 index..."
 mkdir -p bowtie2_index
 cd bowtie2_index
@@ -65,7 +70,7 @@ ln -s ../ref.fa .
 bowtie2-build ref.fa ref.fa
 cd ..
 
-# creates a TSV file with the reference FASTA file, chromosome sizes file, regex filtering for chromosomes file, and indexed bowtie 2 file, alongside their respective paths
+#creates a TSV file with the genome name, reference FASTA, chromosome size, regex pattern, and bowtie2 indexes, alongside their respective file paths
 echo "=== Creating TSV file..."
 cat > ${TSV} <<EOF
 genome_name\t${GENOME}
@@ -76,4 +81,3 @@ bowtie2_index\t${DEST_DIR}/bowtie2_index
 EOF
 
 echo "=== Done! TSV file written to ${TSV}"
-
