@@ -1109,49 +1109,54 @@ struct RuntimeEnvironment {
         }
     }
 
-    # if there are TAs for ALL replicates then pool them
-    Boolean has_all_inputs_of_pool_ta = length(select_all(ta_))==num_rep
-    if ( has_all_inputs_of_pool_ta && num_rep>1 ) {
-        # pool tagaligns from true replicates
-        call pool_ta { input :
-            tas = ta_,
-            prefix = 'rep',
-
-            runtime_environment = runtime_environment
-        }
+        # Since there is only one replicate, directly proceed with pooling the tagaligns (TAs)
+        Boolean has_input_of_pool_ta = length(select_all(ta_)) == 1  # Only check if there is input for one replicate
+        if ( has_input_of_pool_ta ) {
+            # Pool tagaligns from the single replicate
+            call pool_ta { 
+                input :
+                    tas = ta_,  # Use the tag-alignments for the single replicate
+                    prefix = 'rep1',  # Prefix for the single replicate
+                    runtime_environment = runtime_environment
     }
+}
 
-    # if there are pr1 TAs for ALL replicates then pool them
-    Boolean has_all_inputs_of_pool_ta_pr1 = length(select_all(spr.ta_pr1))==num_rep
-    if ( has_all_inputs_of_pool_ta_pr1 && num_rep>1 && !align_only && !true_rep_only ) {
-        # pool tagaligns from pseudo replicate 1
-        call pool_ta as pool_ta_pr1 { input :
-            tas = spr.ta_pr1,
-            prefix = 'rep-pr1',
-            runtime_environment = runtime_environment
-        }
+        # Check if there is an input for pr1 and pool it for the single replicate
+        Boolean has_input_of_pool_ta_pr1 = length(spr.ta_pr1) == 1  # Check if there is only one pr1 TA
+        if ( has_input_of_pool_ta_pr1 && !align_only && !true_rep_only ) {
+        # Pool tagaligns from pseudo replicate 1 for the single replicate
+            call pool_ta as pool_ta_pr1 { 
+                input :
+                    tas = spr.ta_pr1,  # Use the TA for pr1 for the single replicate
+                    prefix = 'rep-pr1',  # Prefix for pseudo replicate 1
+                    runtime_environment = runtime_environment
     }
+}
 
-    # if there are pr2 TAs for ALL replicates then pool them
-    Boolean has_all_inputs_of_pool_ta_pr2 = length(select_all(spr.ta_pr2))==num_rep
-    if ( has_all_inputs_of_pool_ta_pr1 && num_rep>1 && !align_only && !true_rep_only ) {
-        # pool tagaligns from pseudo replicate 2
-        call pool_ta as pool_ta_pr2 { input :
-            tas = spr.ta_pr2,
-            prefix = 'rep-pr2',
-            runtime_environment = runtime_environment
-        }
+        # Check if there is an input for pr2 and pool it for the single replicate
+        Boolean has_input_of_pool_ta_pr2 = length(spr.ta_pr2) == 1  # Check if there is only one pr2 TA
+        if ( has_input_of_pool_ta_pr2 && !align_only && !true_rep_only ) {
+            # Pool tagaligns from pseudo replicate 2 for the single replicate
+            call pool_ta as pool_ta_pr2 { 
+                input :
+                    tas = spr.ta_pr2,  # Use the TA for pr2 for the single replicate
+                    prefix = 'rep-pr2',  # Prefix for pseudo replicate 2
+                    runtime_environment = runtime_environment
     }
+}
 
-    Boolean has_input_of_call_peak_pooled = defined(pool_ta.ta_pooled)
-    Boolean has_output_of_call_peak_pooled = defined(peak_pooled)
-    if ( has_input_of_call_peak_pooled && !has_output_of_call_peak_pooled &&
-        !align_only && num_rep>1 ) {
-        # call peaks on pooled replicate
-        call call_peak as call_peak_pooled { input :
+
+ # Check if there is input for pooled tagaligns and output is not yet defined
+Boolean has_input_of_call_peak_pooled = defined(pool_ta.ta_pooled)
+Boolean has_output_of_call_peak_pooled = defined(peak_pooled)
+
+if ( has_input_of_call_peak_pooled && !has_output_of_call_peak_pooled && !align_only ) {
+    # Call peaks on pooled tagalignments for the single replicate
+    call call_peak as call_peak_pooled { 
+        input :
             peak_caller = peak_caller_,
             peak_type = peak_type_,
-            ta = pool_ta.ta_pooled,
+            ta = pool_ta.ta_pooled,  # Using pooled TA for the single replicate
             gensz = gensz_,
             chrsz = chrsz_,
             cap_num_peak = cap_num_peak_,
@@ -1168,209 +1173,40 @@ struct RuntimeEnvironment {
             runtime_environment = if peak_caller == 'spp' then runtime_environment_spp
                 else if peak_caller == 'macs2' then runtime_environment_macs2
                 else runtime_environment
-        }
     }
+}
+
     File? peak_pooled_ = if has_output_of_call_peak_pooled then peak_pooled
         else call_peak_pooled.peak
 
-    Boolean has_input_of_count_signal_track_pooled = defined(pool_ta.ta_pooled)
-    if ( has_input_of_count_signal_track_pooled && enable_count_signal_track && num_rep>1 ) {
-        call count_signal_track as count_signal_track_pooled { input :
-            ta = pool_ta.ta_pooled,
-            chrsz = chrsz_,
-            runtime_environment = runtime_environment
-        }
-    }
+  Boolean has_input_of_jsd = defined(blacklist_) && length(select_all(nodup_bam_)) == 1
+if (has_input_of_jsd && enable_jsd) {
+    # Fingerprint and JSD plot (even for one replicate)
+    call jsd { input :
+        nodup_bams = nodup_bam_,
+        blacklist = blacklist_,
+        mapq_thresh = mapq_thresh_,
 
-    Boolean has_input_of_macs2_signal_track_pooled = defined(pool_ta.ta_pooled)
-    if ( has_input_of_macs2_signal_track_pooled && num_rep>1 ) {
-        call macs2_signal_track as macs2_signal_track_pooled { input :
-            ta = pool_ta.ta_pooled,
-            gensz = gensz_,
-            chrsz = chrsz_,
-            pval_thresh = pval_thresh,
-            smooth_win = smooth_win,
-
-            mem_factor = macs2_signal_track_mem_factor,
-            disk_factor = macs2_signal_track_disk_factor,
-            time_hr = macs2_signal_track_time_hr,
-            runtime_environment = runtime_environment_macs2
-        }
-    }
-
-    Boolean has_input_of_jsd = defined(blacklist_) &&
-        length(select_all(nodup_bam_))==num_rep
-    if ( has_input_of_jsd && num_rep > 0 && enable_jsd ) {
-        # fingerprint and JS-distance plot
-        call jsd { input :
-            nodup_bams = nodup_bam_,
-            blacklist = blacklist_,
-            mapq_thresh = mapq_thresh_,
-
-            cpu = jsd_cpu,
-            mem_factor = jsd_mem_factor,
-            time_hr = jsd_time_hr,
-            disk_factor = jsd_disk_factor,
-            runtime_environment = runtime_environment
-        }
-    }
-
-    Boolean has_input_of_call_peak_ppr1 = defined(pool_ta_pr1.ta_pooled)
-    Boolean has_output_of_call_peak_ppr1 = defined(peak_ppr1)
-    if ( has_input_of_call_peak_ppr1 && !has_output_of_call_peak_ppr1 &&
-        !align_only && !true_rep_only && num_rep>1 ) {
-        # call peaks on 1st pooled pseudo replicates
-        call call_peak as call_peak_ppr1 { input :
-            peak_caller = peak_caller_,
-            peak_type = peak_type_,
-            ta = pool_ta_pr1.ta_pooled,
-            gensz = gensz_,
-            chrsz = chrsz_,
-            cap_num_peak = cap_num_peak_,
-            pval_thresh = pval_thresh,
-            smooth_win = smooth_win,
-            blacklist = blacklist_,
-            regex_bfilt_peak_chr_name = regex_bfilt_peak_chr_name_,
-
-            cpu = call_peak_cpu,
-            mem_factor = call_peak_mem_factor,
-            disk_factor = call_peak_disk_factor,
-            time_hr = call_peak_time_hr,
-
-            runtime_environment = if peak_caller == 'spp' then runtime_environment_spp
-                else if peak_caller == 'macs2' then runtime_environment_macs2
-                else runtime_environment
-        }
-    }
-    File? peak_ppr1_ = if has_output_of_call_peak_ppr1 then peak_ppr1
-        else call_peak_ppr1.peak
-
-    Boolean has_input_of_call_peak_ppr2 = defined(pool_ta_pr2.ta_pooled)
-    Boolean has_output_of_call_peak_ppr2 = defined(peak_ppr2)
-    if ( has_input_of_call_peak_ppr2 && !has_output_of_call_peak_ppr2 &&
-        !align_only && !true_rep_only && num_rep>1 ) {
-        # call peaks on 2nd pooled pseudo replicates
-        call call_peak as call_peak_ppr2 { input :
-            peak_caller = peak_caller_,
-            peak_type = peak_type_,
-            ta = pool_ta_pr2.ta_pooled,
-            gensz = gensz_,
-            chrsz = chrsz_,
-            cap_num_peak = cap_num_peak_,
-            pval_thresh = pval_thresh,
-            smooth_win = smooth_win,
-            blacklist = blacklist_,
-            regex_bfilt_peak_chr_name = regex_bfilt_peak_chr_name_,
-
-            cpu = call_peak_cpu,
-            mem_factor = call_peak_mem_factor,
-            disk_factor = call_peak_disk_factor,
-            time_hr = call_peak_time_hr,
-            runtime_environment = if peak_caller == 'spp' then runtime_environment_spp
-                else if peak_caller == 'macs2' then runtime_environment_macs2
-                else runtime_environment
-        }
-    }
-    # Use the first replicate's peak file 
-    File? peak1_ = peak_[0]
-
-    # Only run the overlap task if there's at least one peak file available
-    if ( !align_only ) {
-        call overlap { 
-            input :
-                prefix = 'rep1',  # Prefix will now just be 'rep1' since there's only one replicate
-                peak1 = peak1_,
-                peak2 = peak1_,  # Since there's only one replicate, compare it to itself
-                peak_pooled = peak_pooled_,
-                peak_type = peak_type_,
-                blacklist = blacklist_,
-                chrsz = chrsz_,
-                regex_bfilt_peak_chr_name = regex_bfilt_peak_chr_name_,
-                ta = pool_ta.ta_pooled,
-                runtime_environment = runtime_environment
+        cpu = jsd_cpu,
+        mem_factor = jsd_mem_factor,
+        time_hr = jsd_time_hr,
+        disk_factor = jsd_disk_factor,
+        runtime_environment = runtime_environment
     }
 }
-    # Only proceed if alignment and true replicate-only condition are not set
-    if ( !align_only && !true_rep_only ) {
-        # As we only have one replicate, we directly compare the pseudo-replicates (pr1, pr2)
-        call overlap as overlap_pr { 
-            input :
-                prefix = 'rep1-pr1_vs_rep1-pr2',  # Only one replicate, so this will be the comparison name
-                peak1 = peak_pr1_[0],  # Use the first pseudo-replicate peaks for the only replicate
-                peak2 = peak_pr2_[0],  # Use the second pseudo-replicate peaks for the only replicate
-                peak_pooled = peak_[0],  # Use the pooled peak for the only replicate
-                peak_type = peak_type_,
-                blacklist = blacklist_,
-                chrsz = chrsz_,
-                regex_bfilt_peak_chr_name = regex_bfilt_peak_chr_name_,
-                ta = ta_[0],  # Use the first (and only) ta for the single replicate
-                runtime_environment = runtime_environment
+# Reproducibility QC for overlapping peaks
+ if ( !align_only && !true_rep_only && num_rep > 0 ) {
+    # Reproducibility QC for overlapping peaks
+      call reproducibility as reproducibility_overlap { input :
+          prefix = 'overlap',
+          peaks = select_all(overlap.bfilt_overlap_peak),
+          peak_type = peak_type_,
+          chrsz = chrsz_,
+          runtime_environment = runtime_environment
     }
 }
-
-    if ( !align_only && !true_rep_only && num_rep>1 ) {
-        # Naive overlap on pooled pseudo replicates
-        call overlap as overlap_ppr { input :
-            prefix = 'pooled-pr1_vs_pooled-pr2',
-            peak1 = peak_ppr1_,
-            peak2 = peak_ppr2_,
-            peak_pooled = peak_pooled_,
-            peak_type = peak_type_,
-            blacklist = blacklist_,
-            chrsz = chrsz_,
-            regex_bfilt_peak_chr_name = regex_bfilt_peak_chr_name_,
-            ta = pool_ta.ta_pooled,
-            runtime_environment = runtime_environment
-        }
-    }
-
-    if ( !align_only && !true_rep_only && num_rep>1 ) {
-        # IDR on pooled pseduo replicates
-        call idr as idr_ppr { input :
-            prefix = 'pooled-pr1_vs_pooled-pr2',
-            peak1 = peak_ppr1_,
-            peak2 = peak_ppr2_,
-            peak_pooled = peak_pooled_,
-            idr_thresh = idr_thresh,
-            peak_type = peak_type_,
-            rank = idr_rank_,
-            blacklist = blacklist_,
-            chrsz = chrsz_,
-            regex_bfilt_peak_chr_name = regex_bfilt_peak_chr_name_,
-            ta = pool_ta.ta_pooled,
-            runtime_environment = runtime_environment
-        }
-    }
-
-    # reproducibility QC for overlap/IDR peaks
-    if ( !align_only && !true_rep_only && num_rep > 0 ) {
-        # reproducibility QC for overlapping peaks
-        call reproducibility as reproducibility_overlap { input :
-            prefix = 'overlap',
-            peaks = select_all(overlap.bfilt_overlap_peak),
-            peaks_pr = if defined(overlap_pr.bfilt_overlap_peak) then select_first([overlap_pr.bfilt_overlap_peak]) else [],
-            peak_ppr = overlap_ppr.bfilt_overlap_peak,
-            peak_type = peak_type_,
-            chrsz = chrsz_,
-            runtime_environment = runtime_environment
-        }
-    }
-
-    if ( !align_only && !true_rep_only && num_rep > 0 && enable_idr ) {
-        # reproducibility QC for IDR peaks
-        call reproducibility as reproducibility_idr { input :
-            prefix = 'idr',
-            peaks = select_all(idr.bfilt_idr_peak),
-            peaks_pr = if defined(idr_pr.bfilt_idr_peak) then select_first([idr_pr.bfilt_idr_peak]) else [],
-            peak_ppr = idr_ppr.bfilt_idr_peak,
-            peak_type = peak_type_,
-            chrsz = chrsz_,
-            runtime_environment = runtime_environment
-        }
-    }
-
     # Generate final QC report and JSON
-    call qc_report { input :
+      call qc_report { input :
         pipeline_ver = pipeline_ver,
         title = title,
         description = description,
@@ -1382,14 +1218,12 @@ struct RuntimeEnvironment {
         no_dup_removal = no_dup_removal,
         peak_caller = peak_caller_,
         cap_num_peak = cap_num_peak_,
-        idr_thresh = idr_thresh,
         pval_thresh = pval_thresh,
         xcor_subsample_reads = xcor_subsample_reads,
 
         samstat_qcs = select_all(align.samstat_qc),
         nodup_samstat_qcs = select_all(filter.samstat_qc),
 
-        frac_mito_qcs = select_all(frac_mito.frac_mito_qc),
         dup_qcs = select_all(filter.dup_qc),
         lib_complexity_qcs = select_all(filter.lib_complexity_qc),
         xcor_plots = select_all(xcor.plot_png),
@@ -1406,9 +1240,6 @@ struct RuntimeEnvironment {
         frip_qc_ppr1 = call_peak_ppr1.frip_qc,
         frip_qc_ppr2 = call_peak_ppr2.frip_qc,
 
-        idr_plots = select_all(idr.idr_plot),
-        idr_plots_pr = if defined(idr_pr.idr_plot) then select_first([idr_pr.idr_plot]) else [],
-        idr_plot_ppr = idr_ppr.idr_plot,
         frip_idr_qcs = select_all(idr.frip_qc),
         frip_idr_qcs_pr = if defined(idr_pr.frip_qc) then select_first([idr_pr.frip_qc]) else [],
         frip_idr_qc_ppr = idr_ppr.frip_qc,
@@ -1431,10 +1262,6 @@ struct RuntimeEnvironment {
         peak_region_size_qcs = select_all(call_peak.peak_region_size_qc),
         peak_region_size_plots = select_all(call_peak.peak_region_size_plot),
         num_peak_qcs = select_all(call_peak.num_peak_qc),
-
-        idr_opt_peak_region_size_qc = reproducibility_idr.peak_region_size_qc,
-        idr_opt_peak_region_size_plot = reproducibility_overlap.peak_region_size_plot,
-        idr_opt_num_peak_qc = reproducibility_idr.num_peak_qc,
 
         overlap_opt_peak_region_size_qc = reproducibility_overlap.peak_region_size_qc,
         overlap_opt_peak_region_size_plot = reproducibility_overlap.peak_region_size_plot,
@@ -1466,7 +1293,6 @@ task align {
 
         # for task align
         String aligner
-        String mito_chr_name
         File chrsz            # 2-col chromosome sizes file
         File idx_tar        # reference index tar or tar.gz
         Int multimapping
@@ -1489,6 +1315,7 @@ task align {
                 else transpose([fastqs_R1])
     Array[Array[String]] tmp_adapters = if paired_end then transpose([adapters_R1, adapters_R2])
                 else transpose([adapters_R1])
+ #shell script (inside a WDL command block) that orchestrates the steps for trimming adapters, aligning sequences, and processing alignment results.
     command {
         set -e
 
@@ -1543,34 +1370,6 @@ task align {
         time : time_hr
         disks : 'local-disk ${disk_gb} SSD'
         preemptible: 0
-
-        docker : runtime_environment.docker
-        singularity : runtime_environment.singularity
-        conda : runtime_environment.conda
-    }
-}
-
-task frac_mito {
-    input {
-        File? non_mito_samstat
-        File? mito_samstat
-
-        RuntimeEnvironment runtime_environment
-    }
-
-    command {
-        set -e
-        python3 $(which encode_task_frac_mito.py) \
-            ${non_mito_samstat} ${mito_samstat}
-    }
-    output {
-        File frac_mito_qc = glob('*.frac_mito.qc')[0]
-    }
-    runtime {
-        cpu : 1
-        memory : '4 GB'
-        time : 4
-        disks : 'local-disk 10 SSD'
 
         docker : runtime_environment.docker
         singularity : runtime_environment.singularity
@@ -1645,7 +1444,6 @@ task bam2ta {
         File? bam
         Boolean paired_end
         Boolean disable_tn5_shift     # no tn5 shifting (it's for dnase-seq)
-        String mito_chr_name         # mito chromosome name
         Int subsample                 # number of reads to subsample TAGALIGN
                                     # this affects all downstream analysis
         Int cpu
@@ -1666,7 +1464,6 @@ task bam2ta {
             ${bam} \
             ${if paired_end then '--paired-end' else ''} \
             ${if disable_tn5_shift then '--disable-tn5-shift' else ''} \
-            ${'--mito-chr-name ' + mito_chr_name} \
             ${'--subsample ' + subsample} \
             ${'--mem-gb ' + samtools_mem_gb} \
             ${'--nth ' + cpu}
@@ -1781,7 +1578,6 @@ task xcor {
         python3 $(which encode_task_xcor.py) \
             ${ta} \
             ${if paired_end then '--paired-end' else ''} \
-            ${'--mito-chr-name ' + mito_chr_name} \
             ${'--subsample ' + subsample} \
             --speak=0 \
             ${'--nth ' + cpu}
@@ -1998,66 +1794,8 @@ task macs2_signal_track {
         conda : runtime_environment.conda
     }
 }
-
-task idr {
     input {
-        String prefix         # prefix for IDR output file
-        File? peak1
-        File? peak2
-        File? peak_pooled
-        Float idr_thresh
-        File? blacklist     # blacklist BED to filter raw peaks
-        String regex_bfilt_peak_chr_name
-        # parameters to compute FRiP
-        File? ta            # to calculate FRiP
-        File chrsz            # 2-col chromosome sizes file
-        String peak_type
-        String rank
-
-        # runtime environment
-        RuntimeEnvironment runtime_environment
-    }
-    command {
-        set -e
-        touch null
-        python3 $(which encode_task_idr.py) \
-            ${peak1} ${peak2} ${peak_pooled} \
-            ${'--prefix ' + prefix} \
-            ${'--idr-thresh ' + idr_thresh} \
-            ${'--peak-type ' + peak_type} \
-            --idr-rank ${rank} \
-            ${'--chrsz ' + chrsz} \
-            ${'--blacklist '+ blacklist} \
-            ${'--regex-bfilt-peak-chr-name \'' + regex_bfilt_peak_chr_name + '\''} \
-            ${'--ta ' + ta}
-    }
-    output {
-        File idr_peak = glob('*[!.][!b][!f][!i][!l][!t].'+peak_type+'.gz')[0]
-        File bfilt_idr_peak = glob('*.bfilt.'+peak_type+'.gz')[0]
-        File bfilt_idr_peak_bb = glob('*.bfilt.'+peak_type+'.bb')[0]
-        File bfilt_idr_peak_starch = glob('*.bfilt.'+peak_type+'.starch')[0]
-        File bfilt_idr_peak_hammock = glob('*.bfilt.'+peak_type+'.hammock.gz*')[0]
-        File bfilt_idr_peak_hammock_tbi = glob('*.bfilt.'+peak_type+'.hammock.gz*')[1]
-        File idr_plot = glob('*.txt.png')[0]
-        File idr_unthresholded_peak = glob('*.txt.gz')[0]
-        File idr_log = glob('*.idr*.log')[0]
-        File frip_qc = if defined(ta) then glob('*.frip.qc')[0] else glob('null')[0]
-    }
-    runtime {
-        cpu : 1
-        memory : '4 GB'
-        time : 4
-        disks : 'local-disk 50 SSD'
-
-        docker : runtime_environment.docker
-        singularity : runtime_environment.singularity
-        conda : runtime_environment.conda
-    }
-}
-
-task overlap {
-    input {
-        String prefix         # prefix for IDR output file
+        String prefix         # prefix for overlap output file
         File? peak1
         File? peak2
         File? peak_pooled
@@ -2069,7 +1807,8 @@ task overlap {
 
         # runtime environment
         RuntimeEnvironment runtime_environment
-    }
+}
+
     command {
         set -e
         touch null 
@@ -2091,60 +1830,6 @@ task overlap {
         File bfilt_overlap_peak_hammock = glob('*.bfilt.'+peak_type+'.hammock.gz*')[0]
         File bfilt_overlap_peak_hammock_tbi = glob('*.bfilt.'+peak_type+'.hammock.gz*')[1]
         File frip_qc = if defined(ta) then glob('*.frip.qc')[0] else glob('null')[0]
-    }
-    runtime {
-        cpu : 1
-        memory : '4 GB'
-        time : 4
-        disks : 'local-disk 50 SSD'
-
-        docker : runtime_environment.docker
-        singularity : runtime_environment.singularity
-        conda : runtime_environment.conda
-    }
-}
-
-task reproducibility {
-    input {
-        String prefix
-        Array[File] peaks # peak files from pair of true replicates
-                            # in a sorted order. for example of 4 replicates,
-                            # 1,2 1,3 1,4 2,3 2,4 3,4.
-                            # x,y means peak file from rep-x vs rep-y
-        Array[File] peaks_pr    # peak files from pseudo replicates
-        File? peak_ppr            # Peak file from pooled pseudo replicate.
-        String peak_type
-        File chrsz            # 2-col chromosome sizes file
-
-        # runtime environment
-        RuntimeEnvironment runtime_environment
-    }
-    command {
-        set -e
-        python3 $(which encode_task_reproducibility.py) \
-            ${sep=' ' peaks} \
-            --peaks-pr ${sep=' ' peaks_pr} \
-            ${'--peak-ppr '+ peak_ppr} \
-            --prefix ${prefix} \
-            ${'--peak-type ' + peak_type} \
-            ${'--chrsz ' + chrsz}
-    }
-    output {
-        File optimal_peak = glob('*optimal_peak.*.gz')[0]
-        File optimal_peak_bb = glob('*optimal_peak.*.bb')[0]
-        File optimal_peak_starch = glob('*optimal_peak.*.starch')[0]
-        File optimal_peak_hammock = glob('*optimal_peak.*.hammock.gz*')[0]
-        File optimal_peak_hammock_tbi = glob('*optimal_peak.*.hammock.gz*')[1]
-        File conservative_peak = glob('*conservative_peak.*.gz')[0]
-        File conservative_peak_bb = glob('*conservative_peak.*.bb')[0]
-        File conservative_peak_starch = glob('*conservative_peak.*.starch')[0]
-        File conservative_peak_hammock = glob('*conservative_peak.*.hammock.gz*')[0]
-        File conservative_peak_hammock_tbi = glob('*conservative_peak.*.hammock.gz*')[1]
-        File reproducibility_qc = glob('*reproducibility.qc')[0]
-        # QC metrics for optimal peak
-        File peak_region_size_qc = glob('*.peak_region_size.qc')[0]
-        File peak_region_size_plot = glob('*.peak_region_size.png')[0]
-        File num_peak_qc = glob('*.num_peak.qc')[0]
     }
     runtime {
         cpu : 1
@@ -2413,23 +2098,16 @@ task qc_report {
         Array[File] xcor_plots
         Array[File] xcor_scores
         File? jsd_plot
-        Array[File] jsd_qcs
-        Array[File] idr_plots
-        Array[File] idr_plots_pr
-        File? idr_plot_ppr
+        Array[File] jsd_qc
         Array[File] frip_qcs
         Array[File] frip_qcs_pr1
         Array[File] frip_qcs_pr2
         File? frip_qc_pooled
         File? frip_qc_ppr1
         File? frip_qc_ppr2
-        Array[File] frip_idr_qcs
-        Array[File] frip_idr_qcs_pr
-        File? frip_idr_qc_ppr
         Array[File] frip_overlap_qcs
         Array[File] frip_overlap_qcs_pr
         File? frip_overlap_qc_ppr
-        File? idr_reproducibility_qc
         File? overlap_reproducibility_qc
 
         Array[File] annot_enrich_qcs
@@ -2488,21 +2166,14 @@ task qc_report {
             --idr-plots-pr ${sep='_:_' idr_plots_pr} \
             ${'--jsd-plot ' + jsd_plot} \
             --jsd-qcs ${sep='_:_' jsd_qcs} \
-            ${'--idr-plot-ppr ' + idr_plot_ppr} \
             --frip-qcs ${sep='_:_' frip_qcs} \
             --frip-qcs-pr1 ${sep='_:_' frip_qcs_pr1} \
             --frip-qcs-pr2 ${sep='_:_' frip_qcs_pr2} \
             ${'--frip-qc-pooled ' + frip_qc_pooled} \
             ${'--frip-qc-ppr1 ' + frip_qc_ppr1} \
             ${'--frip-qc-ppr2 ' + frip_qc_ppr2} \
-            --frip-idr-qcs ${sep='_:_' frip_idr_qcs} \
-            --frip-idr-qcs-pr ${sep='_:_' frip_idr_qcs_pr} \
-            ${'--frip-idr-qc-ppr ' + frip_idr_qc_ppr} \
             --frip-overlap-qcs ${sep='_:_' frip_overlap_qcs} \
             --frip-overlap-qcs-pr ${sep='_:_' frip_overlap_qcs_pr} \
-            ${'--frip-overlap-qc-ppr ' + frip_overlap_qc_ppr} \
-            ${'--idr-reproducibility-qc ' + idr_reproducibility_qc} \
-            ${'--overlap-reproducibility-qc ' + overlap_reproducibility_qc} \
             --annot-enrich-qcs ${sep='_:_' annot_enrich_qcs} \
             --tss-enrich-qcs ${sep='_:_' tss_enrich_qcs} \
             --tss-large-plots ${sep='_:_' tss_large_plots} \
@@ -2515,9 +2186,6 @@ task qc_report {
             --peak-region-size-qcs ${sep='_:_' peak_region_size_qcs} \
             --peak-region-size-plots ${sep='_:_' peak_region_size_plots} \
             --num-peak-qcs ${sep='_:_' num_peak_qcs} \
-            ${'--idr-opt-peak-region-size-qc ' + idr_opt_peak_region_size_qc} \
-            ${'--idr-opt-peak-region-size-plot ' + idr_opt_peak_region_size_plot} \
-            ${'--idr-opt-num-peak-qc ' + idr_opt_num_peak_qc} \
             ${'--overlap-opt-peak-region-size-qc ' + overlap_opt_peak_region_size_qc} \
             ${'--overlap-opt-peak-region-size-plot ' + overlap_opt_peak_region_size_plot} \
             ${'--overlap-opt-num-peak-qc ' + overlap_opt_num_peak_qc} \
@@ -2553,11 +2221,9 @@ task read_genome_tsv {
         echo "$(basename ~{genome_tsv})" > genome_name
         # create empty files for all entries
         touch ref_fa bowtie2_idx_tar chrsz gensz blacklist blacklist2
-        touch ref_mito_fa
         touch bowtie2_mito_idx_tar
         touch tss tss_enrich # for backward compatibility
         touch dnase prom enh reg2map reg2map_bed roadmap_meta
-        touch mito_chr_name
         touch regex_bfilt_peak_chr_name
 
         python <<CODE
@@ -2581,7 +2247,6 @@ task read_genome_tsv {
         String? gensz = if size('gensz')==0 then null_s else read_string('gensz')
         String? blacklist = if size('blacklist')==0 then null_s else read_string('blacklist')
         String? blacklist2 = if size('blacklist2')==0 then null_s else read_string('blacklist2')
-        String? mito_chr_name = if size('mito_chr_name')==0 then null_s else read_string('mito_chr_name')
         String? regex_bfilt_peak_chr_name = if size('regex_bfilt_peak_chr_name')==0 then 'chr[\\dXY]+'
             else read_string('regex_bfilt_peak_chr_name')
         String? tss = if size('tss')!=0 then read_string('tss')
