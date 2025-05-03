@@ -60,13 +60,13 @@ struct RuntimeEnvironment {
         String conda_python2 = 'encd-atac-py2'
 
         # group: pipeline_metadata
-        String title = 'Untitled'
-        String description = 'No description'
+        String title = 'ATAC-seq on Danaus plexippus'
+        String description = 'ATAC-seq on mid-fifth instar Danaus plexippus caterpillars'
 
         # group: reference_genome
         #Choose either a to reference genome TSV file or to define them all manually
         File? genome_tsv = final_danaus_plexippus.tsv
-        String? genome_name
+        String? genome_name = dp
         File? ref_fa
         File? ref_mito_fa
         File? bowtie2_idx_tar
