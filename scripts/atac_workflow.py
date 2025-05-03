@@ -251,16 +251,8 @@ struct RuntimeEnvironment {
             description: 'Reference FASTA file.',
             group: 'reference_genome'
         }
-        ref_mito_fa: {
-            description: 'Reference FASTA file (mitochondrial reads only).',
-            group: 'reference_genome'
-        }
         bowtie2_idx_tar: {
             description: 'BWA index TAR file.',
-            group: 'reference_genome'
-        }
-        bowtie2_mito_idx_tar: {
-            description: 'BWA index TAR file (mitochondrial reads only).',
             group: 'reference_genome'
         }
         chrsz: {
@@ -276,11 +268,6 @@ struct RuntimeEnvironment {
             description: 'Secondary blacklist file in BED format.',
             group: 'reference_genome',
             help: 'If it is defined, it will be merged with atac.blacklist. Peaks will be filtered with merged blacklist.'
-        }
-        mito_chr_name: {
-            description: 'Mitochondrial chromosome name.',
-            group: 'reference_genome',
-            help: 'e.g. chrM, MT. Mitochondrial reads defined here will be filtered out during filtering BAMs in "filter" task.'
         }
         regex_bfilt_peak_chr_name: {
             description: 'Reg-ex for chromosomes to keep while filtering peaks.',
@@ -359,7 +346,7 @@ struct RuntimeEnvironment {
             help: 'Define if you want to start pipeline from filtered BAM files. Filtered/deduped BAM file. Each entry for each biological replicate. e.g. [rep1.nodup.bam, rep2.nodup.bam, rep3.nodup.bam, ...].'
         }
         tas: {
-            description: 'List of TAG-ALIGN files for each biological replicate.',
+            description: 'List of TAG-ALIGN files for the biological replicate.',
             group: 'input_genomic_data',
             help: 'Define if you want to start pipeline from TAG-ALIGN files. TAG-ALIGN is in a 6-col BED format. It is a simplified version of BAM. Each entry for each biological replicate. e.g. [rep1.tagAlign.gz, rep2.tagAlign.gz, ...].'
         }
@@ -367,33 +354,7 @@ struct RuntimeEnvironment {
             description: 'List of NARROWPEAK files (not blacklist filtered) for each biological replicate.',
             group: 'input_genomic_data',
             help: 'Define if you want to start pipeline from PEAK files. Each entry for each biological replicate. e.g. [rep1.narrowPeak.gz, rep2.narrowPeak.gz, ...]. Define other PEAK parameters (e.g. atac.peaks_pr1, atac.peak_pooled) according to your flag settings (e.g. atac.true_rep_only) and number of replicates. If you have more than one replicate then define atac.peak_pooled, atac.peak_ppr1 and atac.peak_ppr2. If atac.true_rep_only flag is on then do not define any parameters (atac.peaks_pr1, atac.peaks_pr2, atac.peak_ppr1 and atac.peak_ppr2) related to pseudo replicates.'
-        }
-        peaks_pr1: {
-            description: 'List of NARROWPEAK files (not blacklist filtered) for pseudo-replicate 1 of each biological replicate.',
-            group: 'input_genomic_data',
-            help: 'Define if you want to start pipeline from PEAK files. Define if atac.true_rep_only flag is off.'
-        }
-        peaks_pr2: {
-            description: 'List of NARROWPEAK files (not blacklist filtered) for pseudo-replicate 2 of each biological replicate.',
-            group: 'input_genomic_data',
-            help: 'Define if you want to start pipeline from PEAK files. Define if atac.true_rep_only flag is off.'
-        }
-        peak_pooled: {
-            description: 'NARROWPEAK file for pooled true replicate.',
-            group: 'input_genomic_data',
-            help: 'Define if you want to start pipeline from PEAK files. Define if you have multiple biological replicates. Pooled true replicate means analysis on pooled biological replicates.'
-        }
-        peak_ppr1: {
-            description: 'NARROWPEAK file for pooled pseudo replicate 1.',
-            group: 'input_genomic_data',
-            help: 'Define if you want to start pipeline from PEAK files. Define if you have multiple biological replicates and atac.true_rep_only flag is off. PPR1 means analysis on pooled 1st pseudo replicates. Each biological replicate is shuf/split into two pseudos. This is a pooling of each replicate\'s 1st pseudos.'
-        }
-        peak_ppr2: {
-            description: 'NARROWPEAK file for pooled pseudo replicate 2.',
-            group: 'input_genomic_data',
-            help: 'Define if you want to start pipeline from PEAK files. Define if you have multiple biological replicates and atac.true_rep_only flag is off. PPR1 means analysis on pooled 2nd pseudo replicates. Each biological replicate is shuf/split into two pseudos. This is a pooling of each replicate\'s 2nd pseudos.'
-        }
-
+        }    
         pipeline_type: {
             description: 'Pipeline type. atac for ATAC-Seq or dnase for DNase-Seq.',
             group: 'pipeline_parameter',
@@ -418,10 +379,6 @@ struct RuntimeEnvironment {
         }
         enable_count_signal_track: {
             description: 'Enables generation of count signal tracks.',
-            group: 'pipeline_parameter'
-        }
-        enable_idr: {
-            description: 'Enables IDR on MACS2 NARROWPEAKs.',
             group: 'pipeline_parameter'
         }
         enable_preseq: {
@@ -502,11 +459,6 @@ struct RuntimeEnvironment {
             group: 'alignment',
             help: 'Pipeline can estimate read length from FASTQs. If you start pipeline from other types (BAM, NODUP_BAM, TA, ...) than FASTQ. Then provide this for some analyses that require read length (e.g. TSS enrichment plot).'
         }
-        pseudoreplication_random_seed: {
-            description: 'Random seed (positive integer) used for pseudo-replication (shuffling reads in TAG-ALIGN and then split it into two).',
-            group: 'alignment',
-            help: 'Pseudo-replication (task spr) is done by using GNU "shuf --random-source=sha256(random_seed)". If this parameter == 0, then pipeline uses input TAG-ALIGN file\'s size (in bytes) for the random_seed.'
-        }
         cap_num_peak: {
             description: 'Upper limit on the number of peaks.',
             group: 'peak_calling',
@@ -521,10 +473,6 @@ struct RuntimeEnvironment {
             description: 'Size of smoothing windows for MACS2 peak caller.',
             group: 'peak_calling',
             help: 'This will be used for both generating MACS2 peaks/signal tracks.'
-        }
-        idr_thresh: {
-            description: 'IDR threshold.',
-            group: 'peak_calling'
         }
         align_cpu: {
             description: 'Number of cores for task align.',
@@ -728,7 +676,6 @@ struct RuntimeEnvironment {
     }
     File ref_fa_ = select_first([ref_fa, read_genome_tsv.ref_fa])
     File bowtie2_idx_tar_ = select_first([bowtie2_idx_tar, read_genome_tsv.bowtie2_idx_tar])
-    File bowtie2_mito_idx_tar_ = select_first([bowtie2_mito_idx_tar, read_genome_tsv.bowtie2_mito_idx_tar])
     File chrsz_ = select_first([chrsz, read_genome_tsv.chrsz])
     String gensz_ = select_first([gensz, read_genome_tsv.gensz])
     File? blacklist1_ = if defined(blacklist) then blacklist
@@ -749,7 +696,6 @@ struct RuntimeEnvironment {
     File? blacklist_ = if length(blacklists) > 1 then pool_blacklist.ta_pooled
         else if length(blacklists) > 0 then blacklists[0]
         else blacklist2_
-    String mito_chr_name_ = select_first([mito_chr_name, read_genome_tsv.mito_chr_name])
     String regex_bfilt_peak_chr_name_ = select_first([regex_bfilt_peak_chr_name, read_genome_tsv.regex_bfilt_peak_chr_name])
     String genome_name_ = select_first([genome_name, read_genome_tsv.genome_name, basename(chrsz_)])
 
@@ -814,7 +760,6 @@ struct RuntimeEnvironment {
                 cutadapt_param = cutadapt_param,
             
                 aligner = aligner_,
-                mito_chr_name = mito_chr_name_,
                 chrsz = chrsz_,
                 multimapping = multimapping,
                 idx_tar = bowtie2_idx_tar_,
@@ -843,7 +788,6 @@ struct RuntimeEnvironment {
                 chrsz = chrsz_,
                 no_dup_removal = no_dup_removal,
                 multimapping = multimapping,
-                mito_chr_name = mito_chr_name_,
 
                 cpu = filter_cpu,
                 mem_factor = filter_mem_factor,
@@ -863,7 +807,6 @@ struct RuntimeEnvironment {
                 disable_tn5_shift = if pipeline_type=='atac' then false else true,
                 subsample = subsample_reads,
                 paired_end = paired_end_,
-                mito_chr_name = mito_chr_name_,
 
                 cpu = bam2ta_cpu,
                 mem_factor = bam2ta_mem_factor,
@@ -885,7 +828,6 @@ struct RuntimeEnvironment {
                 chrsz = chrsz_,
                 no_dup_removal = true,
                 multimapping = multimapping,
-                mito_chr_name = mito_chr_name_,
 
                 cpu = filter_cpu,
                 mem_factor = filter_mem_factor,
@@ -971,7 +913,6 @@ struct RuntimeEnvironment {
             call spr { input :
                 ta = ta_,
                 paired_end = paired_end_,
-                pseudoreplication_random_seed = pseudoreplication_random_seed,
                 mem_factor = spr_mem_factor,
                 disk_factor = spr_disk_factor,
                 runtime_environment = runtime_environment
@@ -1145,40 +1086,6 @@ struct RuntimeEnvironment {
     }
 }
 
-
- # Check if there is input for pooled tagaligns and output is not yet defined
-Boolean has_input_of_call_peak_pooled = defined(pool_ta.ta_pooled)
-Boolean has_output_of_call_peak_pooled = defined(peak_pooled)
-
-if ( has_input_of_call_peak_pooled && !has_output_of_call_peak_pooled && !align_only ) {
-    # Call peaks on pooled tagalignments for the single replicate
-    call call_peak as call_peak_pooled { 
-        input :
-            peak_caller = peak_caller_,
-            peak_type = peak_type_,
-            ta = pool_ta.ta_pooled,  # Using pooled TA for the single replicate
-            gensz = gensz_,
-            chrsz = chrsz_,
-            cap_num_peak = cap_num_peak_,
-            pval_thresh = pval_thresh,
-            smooth_win = smooth_win,
-            blacklist = blacklist_,
-            regex_bfilt_peak_chr_name = regex_bfilt_peak_chr_name_,
-
-            cpu = call_peak_cpu,
-            mem_factor = call_peak_mem_factor,
-            disk_factor = call_peak_disk_factor,
-            time_hr = call_peak_time_hr,
-
-            runtime_environment = if peak_caller == 'spp' then runtime_environment_spp
-                else if peak_caller == 'macs2' then runtime_environment_macs2
-                else runtime_environment
-    }
-}
-
-    File? peak_pooled_ = if has_output_of_call_peak_pooled then peak_pooled
-        else call_peak_pooled.peak
-
   Boolean has_input_of_jsd = defined(blacklist_) && length(select_all(nodup_bam_)) == 1
 if (has_input_of_jsd && enable_jsd) {
     # Fingerprint and JSD plot (even for one replicate)
@@ -1236,17 +1143,9 @@ if (has_input_of_jsd && enable_jsd) {
         frip_qcs_pr1 = select_all(call_peak_pr1.frip_qc),
         frip_qcs_pr2 = select_all(call_peak_pr2.frip_qc),
 
-        frip_qc_pooled = call_peak_pooled.frip_qc,
-        frip_qc_ppr1 = call_peak_ppr1.frip_qc,
-        frip_qc_ppr2 = call_peak_ppr2.frip_qc,
-
-        frip_idr_qcs = select_all(idr.frip_qc),
-        frip_idr_qcs_pr = if defined(idr_pr.frip_qc) then select_first([idr_pr.frip_qc]) else [],
-        frip_idr_qc_ppr = idr_ppr.frip_qc,
         frip_overlap_qcs = select_all(overlap.frip_qc),
         frip_overlap_qcs_pr = if defined(overlap_pr.frip_qc) then select_first([overlap_pr.frip_qc]) else [],
         frip_overlap_qc_ppr = overlap_ppr.frip_qc,
-        idr_reproducibility_qc = reproducibility_idr.reproducibility_qc,
         overlap_reproducibility_qc = reproducibility_overlap.reproducibility_qc,
 
         annot_enrich_qcs = select_all(annot_enrich.annot_enrich_qc),
@@ -1415,7 +1314,6 @@ task filter {
             --filter-chrs ${sep=' ' filter_chrs} \
             ${'--chrsz ' + chrsz} \
             ${if no_dup_removal then '--no-dup-removal' else ''} \
-            ${'--mito-chr-name ' + mito_chr_name} \
             ${'--mem-gb ' + samtools_mem_gb} \
             ${'--nth ' + cpu} \
             ${'--picard-java-heap ' + if defined(picard_java_heap) then picard_java_heap else (round(mem_gb * picard_java_heap_factor) + 'G')}
@@ -1503,7 +1401,6 @@ task spr {
         set -e
         python3 $(which encode_task_spr.py) \
             ${ta} \
-            ${'--pseudoreplication-random-seed ' + pseudoreplication_random_seed} \
             ${if paired_end then '--paired-end' else ''}
     }
     output {
@@ -1557,7 +1454,6 @@ task xcor {
     input {
         File? ta
         Boolean paired_end
-        String mito_chr_name
         Int subsample  # number of reads to subsample TAGALIGN
                     # this will be used for xcor only
                     # will not affect any downstream analysis
@@ -2124,14 +2020,6 @@ task qc_report {
         Array[File] peak_region_size_plots
         Array[File] num_peak_qcs
 
-        File? idr_opt_peak_region_size_qc
-        File? idr_opt_peak_region_size_plot
-        File? idr_opt_num_peak_qc
-
-        File? overlap_opt_peak_region_size_qc
-        File? overlap_opt_peak_region_size_plot
-        File? overlap_opt_num_peak_qc
-
         File? qc_json_ref
 
         # runtime environment
@@ -2152,24 +2040,19 @@ task qc_report {
             ${if (no_dup_removal) then '--no-dup-removal ' else ''} \
             --peak-caller ${peak_caller} \
             ${'--cap-num-peak ' + cap_num_peak} \
-            --idr-thresh ${idr_thresh} \
             --pval-thresh ${pval_thresh} \
             --xcor-subsample-reads ${xcor_subsample_reads} \
-            --frac-mito-qcs ${sep='_:_' frac_mito_qcs} \
             --samstat-qcs ${sep='_:_' samstat_qcs} \
             --nodup-samstat-qcs ${sep='_:_' nodup_samstat_qcs} \
             --dup-qcs ${sep='_:_' dup_qcs} \
             --lib-complexity-qcs ${sep='_:_' lib_complexity_qcs} \
             --xcor-plots ${sep='_:_' xcor_plots} \
             --xcor-scores ${sep='_:_' xcor_scores} \
-            --idr-plots ${sep='_:_' idr_plots} \
-            --idr-plots-pr ${sep='_:_' idr_plots_pr} \
             ${'--jsd-plot ' + jsd_plot} \
             --jsd-qcs ${sep='_:_' jsd_qcs} \
             --frip-qcs ${sep='_:_' frip_qcs} \
             --frip-qcs-pr1 ${sep='_:_' frip_qcs_pr1} \
             --frip-qcs-pr2 ${sep='_:_' frip_qcs_pr2} \
-            ${'--frip-qc-pooled ' + frip_qc_pooled} \
             ${'--frip-qc-ppr1 ' + frip_qc_ppr1} \
             ${'--frip-qc-ppr2 ' + frip_qc_ppr2} \
             --frip-overlap-qcs ${sep='_:_' frip_overlap_qcs} \
@@ -2186,9 +2069,6 @@ task qc_report {
             --peak-region-size-qcs ${sep='_:_' peak_region_size_qcs} \
             --peak-region-size-plots ${sep='_:_' peak_region_size_plots} \
             --num-peak-qcs ${sep='_:_' num_peak_qcs} \
-            ${'--overlap-opt-peak-region-size-qc ' + overlap_opt_peak_region_size_qc} \
-            ${'--overlap-opt-peak-region-size-plot ' + overlap_opt_peak_region_size_plot} \
-            ${'--overlap-opt-num-peak-qc ' + overlap_opt_num_peak_qc} \
             --out-qc-html qc.html \
             --out-qc-json qc.json \
             ${'--qc-json-ref ' + qc_json_ref}
