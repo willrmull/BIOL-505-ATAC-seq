@@ -372,17 +372,8 @@ struct RuntimeEnvironment {
             group: 'pipeline_parameter',
             help: 'Pipeline generates 2 pseudo-replicate from one biological replicate. This flag turns off all analyses related to pseudos (with prefix/suffix pr, ppr).'
         }
-        enable_xcor: {
-            description: 'Enables cross-correlation analysis.',
-            group: 'pipeline_parameter',
-            help: 'Generates cross-correlation plot.'
-        }
         enable_count_signal_track: {
             description: 'Enables generation of count signal tracks.',
-            group: 'pipeline_parameter'
-        }
-        enable_preseq: {
-            description: 'Enables preseq analysis.',
             group: 'pipeline_parameter'
         }
         enable_fraglen_stat: {
@@ -448,11 +439,6 @@ struct RuntimeEnvironment {
             description: 'Subsample reads. Shuffle and subsample reads.',
             group: 'alignment',
             help: 'This affects all downstream analyses after filtering BAM. (e.g. all TAG-ALIGN files, peak-calling). Reads will be shuffled only if actual number of reads in BAM exceeds this number.  0 means disabled.'
-        }
-        xcor_subsample_reads: {
-            description: 'Subsample reads for cross-corrlelation analysis only.',
-            group: 'alignment',
-            help: 'This does not affect downstream analyses after filtering BAM. It is for cross-correlation analysis only. 0 means disabled.'
         }
         read_len: {
             description: 'Read length per biological replicate.',
@@ -564,26 +550,6 @@ struct RuntimeEnvironment {
             group: 'resource_parameter',
             help: 'This factor will be multiplied to the size of filtered BAMs to determine required disk size of instance on GCP/AWS.'
         }
-        xcor_cpu: {
-            description: 'Number of cores for task xcor.',
-            group: 'resource_parameter',
-            help: 'Task xcor does cross-correlation analysis (including a plot) on subsampled TAG-ALIGNs.'
-        }
-        xcor_mem_factor: {
-            description: 'Multiplication factor to determine memory required for task xcor.',
-            group: 'resource_parameter',
-            help: 'This factor will be multiplied to the size of TAG-ALIGNs (BEDs) to determine required memory of instance (GCP/AWS) or job (HPCs).'
-        }
-        xcor_time_hr: {
-            description: 'Walltime (h) required for task xcor.',
-            group: 'resource_parameter',
-            help: 'This is for HPCs only. e.g. SLURM, SGE, ...'
-        }
-        xcor_disk_factor: {
-            description: 'Multiplication factor to determine persistent disk size for task xcor.',
-            group: 'resource_parameter',
-            help: 'This factor will be multiplied to the size of TAG-ALIGNs (BEDs) to determine required disk size of instance on GCP/AWS.'
-        }
         call_peak_cpu: {
             description: 'Number of cores for task call_peak. MACS2 is single-thread. No more than 2 is required.',
             group: 'resource_parameter',
@@ -619,25 +585,10 @@ struct RuntimeEnvironment {
             group: 'resource_parameter',
             help: 'This factor will be multiplied to the size of TAG-ALIGNs (BEDs) to determine required disk size of instance on GCP/AWS.'
         }
-        preseq_mem_factor: {
-            description: 'Multiplication factor to determine memory required for task preseq.',
-            group: 'resource_parameter',
-            help: 'This factor will be multiplied to the size of BAMs to determine required memory of instance (GCP/AWS) or job (HPCs).'
-        }
-        preseq_disk_factor: {
-            description: 'Multiplication factor to determine persistent disk size for task preseq.',
-            group: 'resource_parameter',
-            help: 'This factor will be multiplied to the size of BAMs to determine required disk size of instance on GCP/AWS.'
-        }
         filter_picard_java_heap: {
             description: 'Maximum Java heap (java -Xmx) in task filter.',
             group: 'resource_parameter',
             help: 'Maximum memory for Picard tools MarkDuplicates. If not defined, 90% of filter task\'s memory will be used.'
-        }
-        preseq_picard_java_heap: {
-            description: 'Maximum Java heap (java -Xmx) in task preseq.',
-            group: 'resource_parameter',
-            help: 'Maximum memory for Picard tools EstimateLibraryComplexity. If not defined, 90% of preseq task\'s memory will be used.'
         }
         fraglen_stat_picard_java_heap: {
             description: 'Maximum Java heap (java -Xmx) in task fraglen_stat_pe (for paired end replicate only).',
@@ -869,20 +820,6 @@ struct RuntimeEnvironment {
                 disk_factor = bam2ta_disk_factor,
                 runtime_environment = runtime_environment
             }
-            # subsample tagalign (non-mito) and cross-correlation analysis
-            call xcor { input :
-                ta = bam2ta_no_dedup.ta,
-                subsample = xcor_subsample_reads,
-                paired_end = paired_end_,
-
-                cpu = xcor_cpu,
-                mem_factor = xcor_mem_factor,
-                time_hr = xcor_time_hr,
-                disk_factor = xcor_disk_factor,
-                runtime_environment = runtime_environment_spp
-            }
-        }
-
         Boolean has_input_of_macs2_signal_track = has_output_of_bam2ta || defined(bam2ta.ta)
         # If there is an input TAG-ALIGN file then call macs2_signal_track task
         if ( has_input_of_macs2_signal_track ) {
@@ -1179,8 +1116,6 @@ if (has_input_of_jsd && enable_jsd) {
 
         dup_qcs = select_all(filter.dup_qc),
         lib_complexity_qcs = select_all(filter.lib_complexity_qc),
-        xcor_plots = select_all(xcor.plot_png),
-        xcor_scores = select_all(xcor.score),
 
         jsd_plot = jsd.plot,
         jsd_qcs = if defined(jsd.jsd_qcs) then select_first([jsd.jsd_qcs]) else [],
@@ -1321,7 +1256,11 @@ task align {
         conda : runtime_environment.conda
     }
 }
-
+# filters a BAM file by removing:
+#Low-quality alignments (based on MAPQ score)
+#Specific chromosomes 
+#Duplicate reads (optional, depending on no_dup_removal)
+#Optionally processes paired-end or single-end data
 task filter {
     input {
         File? bam
@@ -1333,7 +1272,6 @@ task filter {
         Array[String] filter_chrs     # chrs to be removed from final (nodup/filt) BAM
         File chrsz                    # 2-col chromosome sizes file
         Boolean no_dup_removal         # no dupe reads removal when filtering BAM
-        String mito_chr_name
 
         Int cpu
         Float mem_factor
@@ -1343,12 +1281,15 @@ task filter {
         # runtime environment
         RuntimeEnvironment runtime_environment
     }
+    #lets the pipeline adjust resources based on file size, 
+    #avoiding crashes on large files and saving resources on small ones.
     Float input_file_size_gb = size(bam, "G")
     Float picard_java_heap_factor = 0.9
     Float mem_gb = 6.0 + mem_factor * input_file_size_gb
     Float samtools_mem_gb = 0.8 * mem_gb
     Int disk_gb = round(20.0 + disk_factor * input_file_size_gb)
-
+    #builds a shell command to run encode_task_filter.py, 
+    #configuring it based on input BAM properties and resource parameters
     command {
         set -e
         python3 $(which encode_task_filter.py) \
@@ -1364,6 +1305,8 @@ task filter {
             ${'--nth ' + cpu} \
             ${'--picard-java-heap ' + if defined(picard_java_heap) then picard_java_heap else (round(mem_gb * picard_java_heap_factor) + 'G')}
     }
+    #collects the key output files (BAM, index, and QC reports) produced by the filtering process,
+    #making them available for downstream tasks in the workflow
     output {
         File nodup_bam = glob('*.bam')[0]
         File nodup_bai = glob('*.bai')[0]
@@ -1371,6 +1314,7 @@ task filter {
         File dup_qc = glob('*.dup.qc')[0]
         File lib_complexity_qc = glob('*.lib_complexity.qc')[0]
     }
+    #specifies the computational resources and environment required to run the filter task
     runtime {
         cpu : cpu
         memory : '${mem_gb} GB'
@@ -1382,7 +1326,8 @@ task filter {
         conda : runtime_environment.conda
     }
 }
-
+#converts a BAM file into a TAGALIGN file, which is a simplified format often used in 
+#ATAC-seq for peak calling
 task bam2ta {
     input {
         File? bam
@@ -1426,7 +1371,8 @@ task bam2ta {
         conda : runtime_environment.conda
     }
 }
-
+#erforms Self Pseudo-Replication (SPR) on a TAGALIGN (.ta) file. This is a common step in ATAC-seq quality control,
+for estimating reproducibility between pseudo-replicates.
 task spr {
     input {
         File? ta
@@ -1464,7 +1410,8 @@ task spr {
         conda : runtime_environment.conda
     }
 }
-
+#merges multiple TAGALIGN (.ta) files into a single pooled TAGALIGN file
+to increase signal depth or combine replicates.
 task pool_ta {
     input {
         Array[File?] tas     # TAG-ALIGNs to be merged
@@ -1495,94 +1442,8 @@ task pool_ta {
         conda : runtime_environment.conda
     }
 }
-
-task xcor {
-    input {
-        File? ta
-        Boolean paired_end
-        Int subsample  # number of reads to subsample TAGALIGN
-                    # this will be used for xcor only
-                    # will not affect any downstream analysis
-        Int cpu
-        Float mem_factor
-        Int time_hr
-        Float disk_factor
-
-        # runtime environment
-        RuntimeEnvironment runtime_environment
-    }
-    Float input_file_size_gb = size(ta, "G")
-    Float mem_gb = 8.0 + mem_factor * input_file_size_gb
-    Int disk_gb = round(20.0 + disk_factor * input_file_size_gb)
-
-    command {
-        set -e
-        python3 $(which encode_task_xcor.py) \
-            ${ta} \
-            ${if paired_end then '--paired-end' else ''} \
-            ${'--subsample ' + subsample} \
-            --speak=0 \
-            ${'--nth ' + cpu}
-    }
-    output {
-        File plot_pdf = glob('*.cc.plot.pdf')[0]
-        File plot_png = glob('*.cc.plot.png')[0]
-        File score = glob('*.cc.qc')[0]
-    }
-    runtime {
-        cpu : cpu
-        memory : '${mem_gb} GB'
-        time : time_hr
-        disks : 'local-disk ${disk_gb} SSD'
-
-        docker : runtime_environment.docker
-        singularity : runtime_environment.singularity
-        conda : runtime_environment.conda
-    }
-}
-
-task jsd {
-    input {
-        Array[File?] nodup_bams
-        File? blacklist
-        Int mapq_thresh
-
-        Int cpu
-        Float mem_factor
-        Int time_hr
-        Float disk_factor
-
-        # runtime environment
-        RuntimeEnvironment runtime_environment
-    }
-    Float input_file_size_gb = size(nodup_bams, "G")
-    Float mem_gb = 5.0 + mem_factor * input_file_size_gb
-    Int disk_gb = round(20.0 + disk_factor * input_file_size_gb)
-
-    command {
-        set -e
-        python3 $(which encode_task_jsd.py) \
-            ${sep=' ' select_all(nodup_bams)} \
-            ${'--mapq-thresh '+ mapq_thresh} \
-            ${'--blacklist '+ blacklist} \
-            ${'--nth ' + cpu}
-    }
-    output {
-        File plot = glob('*.png')[0]
-        Array[File] jsd_qcs = glob('*.jsd.qc')
-    }
-    runtime {
-        cpu : cpu
-        memory : '${mem_gb} GB'
-        time : time_hr
-        disks : 'local-disk ${disk_gb} SSD'
-
-        docker : runtime_environment.docker
-        singularity : runtime_environment.singularity
-        conda : runtime_environment.conda
-    }
-}
-
+#generates a signal track from a TAGALIGN file by counting the number of mapped reads per genomic region (e.g., per base pair)
+and using a chromosome sizes file to ensure the counts are scaled appropriately.
 task count_signal_track {
     input {
         File? ta             # tag-align
@@ -1614,7 +1475,7 @@ task count_signal_track {
         conda : runtime_environment.conda
     }
 }
-
+#calling peaks from a TAGALIGN file from ATAC-seq data using a peak calling algorithm such as MACS2
 task call_peak {
     input {
         String peak_caller
@@ -1689,7 +1550,9 @@ task call_peak {
         conda : runtime_environment.conda
     }
 }
-
+#generates a signal track from a TAGALIGN file using the MACS2 peak calling tool, 
+#and incorporates smoothing and statistical filtering. 
+#This task would produce a signal track that can be visualized
 task macs2_signal_track {
     input {
         File? ta
@@ -1784,89 +1647,7 @@ task macs2_signal_track {
         conda : runtime_environment.conda
     }
 }
-
-task preseq {
-    input {
-        File? bam
-        Boolean paired_end
-
-        Float mem_factor
-        Float disk_factor
-        String? picard_java_heap
-        File? null
-
-        # runtime environment
-        RuntimeEnvironment runtime_environment
-    }
-    Float input_file_size_gb = size(bam, "G")
-    Float mem_gb = 4.0 + mem_factor * input_file_size_gb
-    Float samtools_mem_gb = 0.8 * mem_gb
-    Int disk_gb = round(20.0 + disk_factor * input_file_size_gb)
-    Float picard_java_heap_factor = 0.9
-
-    command {
-        set -e
-        python3 $(which encode_task_preseq.py) \
-            ${if paired_end then '--paired-end' else ''} \
-            ${'--bam ' + bam} \
-            ${'--mem-gb ' + samtools_mem_gb} \
-            ${'--picard-java-heap ' + if defined(picard_java_heap) then picard_java_heap else (round(mem_gb * picard_java_heap_factor) + 'G')}
-        ${if !paired_end then 'touch null.picard_est_lib_size' else ''}
-    }
-    output {
-        File? picard_est_lib_size_qc = if paired_end then 
-            glob('*.picard_est_lib_size.qc')[0] else null
-        File preseq_plot = glob('*.preseq.png')[0]
-        File preseq_log = glob('*.preseq.log')[0]
-    }
-    runtime {
-        cpu : 1
-        memory : '${mem_gb} GB'
-        time : 4
-        disks : 'local-disk ${disk_gb} SSD'
-
-        docker : runtime_environment.docker
-        singularity : runtime_environment.singularity
-        conda : runtime_environment.conda
-    }
-}
-
-task annot_enrich {
-    input {
-        # Fraction of Reads In Annotated Regions
-        File? ta
-        File? blacklist
-        File? dnase
-        File? prom
-        File? enh
-
-        # runtime environment
-        RuntimeEnvironment runtime_environment
-    }
-    command {
-        set -e
-        python3 $(which encode_task_annot_enrich.py) \
-            ${'--ta ' + ta} \
-            ${'--blacklist ' + blacklist} \
-            ${'--dnase ' + dnase} \
-            ${'--prom ' + prom} \
-            ${'--enh ' + enh}
-    }
-    output {
-        File annot_enrich_qc = glob('*.annot_enrich.qc')[0]
-    }
-    runtime {
-        cpu : 1
-        memory : '8 GB'
-        time : 4
-        disks : 'local-disk 50 SSD'
-
-        docker : runtime_environment.docker
-        singularity : runtime_environment.singularity
-        conda : runtime_environment.conda
-    }
-}
-
+#calculates TSS (Transcription Start Site) enrichment, a common quality control (QC) metric for ATAC-seq
 task tss_enrich {
     # based on metaseq, which is still in python2
     # python2 environment is required for this task
@@ -1904,7 +1685,8 @@ task tss_enrich {
         conda : runtime_environment.conda
     }
 }
-
+#calculates fragment length statistics for paired-end (PE) sequencing data, using a deduplicated BAM file 
+#quality control that depends on fragment size distributions.
 task fraglen_stat_pe {
     # for PE only
     input {
@@ -1939,7 +1721,7 @@ task fraglen_stat_pe {
         conda : runtime_environment.conda
     }
 }
-
+#analyzes GC bias in sequencing data using a deduplicated BAM file (nodup_bam) and a reference genome FASTA file
 task gc_bias {
     input {
         File? nodup_bam
@@ -1977,43 +1759,8 @@ task gc_bias {
         conda : runtime_environment.conda
     }
 }
-
-task compare_signal_to_roadmap {
-    input {
-        File? pval_bw
-        File? dnase
-        File? reg2map_bed
-        File? reg2map
-        File? roadmap_meta
-
-        # runtime environment
-        RuntimeEnvironment runtime_environment
-    }
-    command {
-        set -e
-        python3 $(which encode_task_compare_signal_to_roadmap.py) \
-            ${'--bigwig ' + pval_bw} \
-            ${'--dnase ' + dnase} \
-            ${'--reg2map-bed ' + reg2map_bed} \
-            ${'--reg2map ' + reg2map} \
-            ${'--roadmap-meta ' + roadmap_meta}
-    }
-    output {
-        File roadmap_compare_plot = glob('*roadmap_compare_plot.png')[0]
-        File roadmap_compare_log = glob('*roadmap_compare.log')[0]
-    }
-    runtime {
-        cpu : 1
-        memory : '8 GB'
-        time : 4
-        disks : 'local-disk 100 SSD'
-
-        docker : runtime_environment.docker
-        singularity : runtime_environment.singularity
-        conda : runtime_environment.conda
-    }
-}
-
+#generates a comprehensive quality control (QC) report
+#that summarizes the performance and quality metrics of the entire sequencing pipeline
 task qc_report {
     input {
         String pipeline_ver
@@ -2135,7 +1882,7 @@ task qc_report {
         conda : runtime_environment.conda
     }
 }
-
+#eads and processes a genome configuration TSV file
 task read_genome_tsv {
     input {
         File? genome_tsv
