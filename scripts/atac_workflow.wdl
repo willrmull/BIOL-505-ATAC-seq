@@ -663,26 +663,35 @@ struct RuntimeEnvironment {
         'docker': docker, 'singularity': singularity, 'conda': conda_python2
     }
 
+    #Initalize the type of aligner, pealk caller and peak type to be used
     String aligner = 'bowtie2'
     String peak_caller = 'macs2'
     String peak_type = 'narrowPeak'
     
-    # read genome data and paths
+    #Checks if genome is defined in the genome_tsv file
+    #If true, then will call the read_genome_tsv task
     if ( defined(genome_tsv) ) {
         call read_genome_tsv { input:
             genome_tsv = genome_tsv,
             runtime_environment = runtime_environment
         }
     }
+
+    #Initalizing values from reference genome into files
+    #Select first will check if the first value is defined, if it is not then the read_genome_tsv value will be used
     File ref_fa_ = select_first([ref_fa, read_genome_tsv.ref_fa])
     File bowtie2_idx_tar_ = select_first([bowtie2_idx_tar, read_genome_tsv.bowtie2_idx_tar])
     File chrsz_ = select_first([chrsz, read_genome_tsv.chrsz])
     String gensz_ = select_first([gensz, read_genome_tsv.gensz])
+
+    #Declaring optinal file variables based on if blacklist was defined
+    #If it was not defined, then the read_genome_tsv value will be used
     File? blacklist1_ = if defined(blacklist) then blacklist
         else read_genome_tsv.blacklist
     File? blacklist2_ = if defined(blacklist2) then blacklist2
         else read_genome_tsv.blacklist2        
-    # merge multiple blacklists
+    # Merge both balcklist files into an 
+    # If the array is longer than one, call the pool_ta task
     # two blacklists can have different number of columns (3 vs 6)
     # so we limit merged blacklist's columns to 3
     Array[File] blacklists = select_all([blacklist1_, blacklist2_])
@@ -693,13 +702,17 @@ struct RuntimeEnvironment {
             runtime_environment = runtime_environment
         }
     }
+    # Assignes a blacklist file based on the length of the blacklists array
+    #If the length is greater than one, then the pooled blacklist will be used
+    #If the length is 1 then the first file is used
+    #If the length is 0, then the second blacklist file will be used
     File? blacklist_ = if length(blacklists) > 1 then pool_blacklist.ta_pooled
         else if length(blacklists) > 0 then blacklists[0]
         else blacklist2_
     String regex_bfilt_peak_chr_name_ = select_first([regex_bfilt_peak_chr_name, read_genome_tsv.regex_bfilt_peak_chr_name])
     String genome_name_ = select_first([genome_name, read_genome_tsv.genome_name, basename(chrsz_)])
 
-    # read additional annotation data
+    # Read additional annotation data
     File? tss_ = if defined(tss) then tss
         else read_genome_tsv.tss
     File? dnase_ = if defined(dnase) then dnase
@@ -733,20 +746,22 @@ struct RuntimeEnvironment {
     # Assume no replicates: only one sample throughout the pipeline
     Int num_rep = 1
 
-    # sanity check for inputs
+    # Verifying that program is funtionally correctly
     if ( num_rep == 0 ) {
         call raise_exception as error_input_data  { input:
             msg = 'No FASTQ/BAM/TAG-ALIGN/PEAK defined in your input JSON. Check if your FASTQs are defined as "atac.fastqs_repX_RY". DO NOT MISS suffix _R1 even for single ended FASTQ.',
             runtime_environment = runtime_environment
         }
     }
+
     # Check if paired_end is defined; otherwise, use the global paired_end value.
     Boolean paired_end_ = if !defined(paired_end) then select_first([paired_end])
         else paired_end
     # Check if there is an input FASTQ file for R1 and R2, and if the BAM output is missing
     Boolean has_input_of_align = length(fastqs_R1) > 0
     Boolean has_output_of_align = length(bams) > 0
-    # Only proceed with alignment if there's input and no output already exists
+    
+    # If there is an input FASTQ file and no output BAM file then call the align task
     if (has_input_of_align && !has_output_of_align) {
         call align {
             input:
@@ -772,12 +787,13 @@ struct RuntimeEnvironment {
                 runtime_environment = runtime_environment
     }
 }
-
+        #If there is an output BAM file then assign it to file
         File? bam_ = if has_output_of_align then bams[i] else align.bam
 
         Boolean has_input_of_filter = has_output_of_align || defined(align.bam)
         Boolean has_output_of_filter = i<length(nodup_bams)
-        # skip if we already have output of this step
+        #If there is an input BAM file which has not been filtered the call the filter task
+        #If there is an output nodup BAM file then assign it to file
         if ( has_input_of_filter && !has_output_of_filter ) {
             call filter { input :
                 bam = bam_,
@@ -801,6 +817,8 @@ struct RuntimeEnvironment {
 
         Boolean has_input_of_bam2ta = has_output_of_filter || defined(filter.nodup_bam)
         Boolean has_output_of_bam2ta = i<length(tas)
+
+        # If there is a input BAM file which has not been converted to TAG-ALIGN then call the bam2ta task
         if ( has_input_of_bam2ta && !has_output_of_bam2ta ) {
             call bam2ta { input :
                 bam = nodup_bam_,
@@ -815,9 +833,12 @@ struct RuntimeEnvironment {
                 runtime_environment = runtime_environment
             }
         }
+        #If it has an output TAG-ALIGN file then assign it to file
         File? ta_ = if has_output_of_bam2ta then tas[i] else bam2ta.ta
 
         Boolean has_input_of_xcor = has_output_of_align || defined(align.bam)
+        # If there is an output of align and cross correlation analysis is enabled then call the following tasks
+        # enable_xcor is set to false by default
         if ( has_input_of_xcor && enable_xcor ) {
             call filter as filter_no_dedup { input :
                 bam = bam_,
@@ -863,6 +884,7 @@ struct RuntimeEnvironment {
         }
 
         Boolean has_input_of_macs2_signal_track = has_output_of_bam2ta || defined(bam2ta.ta)
+        # If there is an input TAG-ALIGN file then call macs2_signal_track task
         if ( has_input_of_macs2_signal_track ) {
             # generate count signal track
             call macs2_signal_track { input :
@@ -882,6 +904,9 @@ struct RuntimeEnvironment {
 
         Boolean has_input_of_call_peak = has_output_of_bam2ta || defined(bam2ta.ta)
         Boolean has_output_of_call_peak = i<length(peaks)
+        # Runs if there is an input TAG-ALIGN file, no output peak file, and if the program is not set to align only
+        #Align only is set to false by default
+        # Assign output of call_peak to peak_ if it is defined
         if ( has_input_of_call_peak && !has_output_of_call_peak && !align_only ) {
             # call peaks on tagalign
             call call_peak { input :
@@ -909,6 +934,7 @@ struct RuntimeEnvironment {
         File? peak_ = if has_output_of_call_peak then peaks[i] else call_peak.peak
 
         Boolean has_input_of_spr = has_output_of_bam2ta || defined(bam2ta.ta)
+        # If there is an input TAG-ALIGN file then call the spr task
         if ( has_input_of_spr && !align_only && !true_rep_only ) {
             call spr { input :
                 ta = ta_,
@@ -921,6 +947,10 @@ struct RuntimeEnvironment {
 
         Boolean has_input_of_call_peak_pr1 = defined(spr.ta_pr1)
         Boolean has_output_of_call_peak_pr1 = i<length(peaks_pr1)
+        # Calls if the first replicate assigned in spr task is defined
+        # Runs call peak on the 1st pseudo replicated tagalign
+        # Align only and true_rep_only are set to false by default
+        # Assigns output to file
         if ( has_input_of_call_peak_pr1 && !has_output_of_call_peak_pr1 &&
             !align_only && !true_rep_only ) {
             # call peaks on 1st pseudo replicated tagalign 
@@ -951,6 +981,10 @@ struct RuntimeEnvironment {
 
         Boolean has_input_of_call_peak_pr2 = defined(spr.ta_pr2)
         Boolean has_output_of_call_peak_pr2 = i<length(peaks_pr2)
+        # Runs if the second replicate assigned in spr task is defined
+        # Rins call peak on the 2nd pseudo replicated tagalign
+        # Align only and true_rep_only are set to false by default
+        # Assigns output to file
         if ( has_input_of_call_peak_pr2 && !has_output_of_call_peak_pr2 &&
             !align_only && !true_rep_only ) {
             # call peaks on 2nd pseudo replicated tagalign 
@@ -980,6 +1014,7 @@ struct RuntimeEnvironment {
             else call_peak_pr2.peak
 
         Boolean has_input_of_count_signal_track = has_output_of_bam2ta || defined(bam2ta.ta)
+        # enable_count_signal_track is set to false by default
         if ( has_input_of_count_signal_track && enable_count_signal_track ) {
             # generate count signal track
             call count_signal_track { input :
@@ -991,6 +1026,8 @@ struct RuntimeEnvironment {
         # tasks factored out from ATAqC
         Boolean has_input_of_tss_enrich = defined(nodup_bam_) && defined(tss_) && (
             defined(align.read_len) || i<length(read_len) )
+        # Runs if tss_enrich is enabled, there is output for nodup_bam, tss is defined, and a read length is defined
+        # enable_tss_enrich is set to true by default
         if ( enable_tss_enrich && has_input_of_tss_enrich ) {
             call tss_enrich { input :
                 read_len = if i<length(read_len) then read_len[i]
@@ -1001,6 +1038,8 @@ struct RuntimeEnvironment {
                 runtime_environment = runtime_environment_python2
             }
         }
+        # Runs if fraglen_stat is enabled, nodup_bam is defined, and paired_end is true
+        # enable_fraglen_stat is set to true by default
         if ( enable_fraglen_stat && paired_end_ && defined(nodup_bam_) ) {
             call fraglen_stat_pe { input :
                 nodup_bam = nodup_bam_,
@@ -1008,6 +1047,7 @@ struct RuntimeEnvironment {
                 runtime_environment = runtime_environment
             }
         }
+        #Enables preseq is set to false by default
         if ( enable_preseq && defined(bam_) ) {
             call preseq { input :
                 bam = bam_,
@@ -1018,6 +1058,9 @@ struct RuntimeEnvironment {
                 runtime_environment = runtime_environment
             }
         }
+
+        # Runs if gc_bias is enabled, nodup_bam is defined, and ref_fa is defined
+        # enable_gc_bias is set to true by default
         if ( enable_gc_bias && defined(nodup_bam_) && defined(ref_fa_) ) {
             call gc_bias { input :
                 nodup_bam = nodup_bam_,
@@ -1026,6 +1069,7 @@ struct RuntimeEnvironment {
                 runtime_environment = runtime_environment
             }
         }
+        # Runs if annot_enrich is enabled and parameters are defined
         if ( enable_annot_enrich && defined(ta_) && defined(blacklist_) && defined(dnase_) && defined(prom_) && defined(enh_) ) {
             call annot_enrich { input :
                 ta = ta_,
@@ -1036,6 +1080,7 @@ struct RuntimeEnvironment {
                 runtime_environment = runtime_environment
             }
         }
+        # Runs if enable_compare_to_roadmap is enabled and parameters are defined
         if ( enable_compare_to_roadmap && defined(macs2_signal_track.pval_bw) &&
              defined(reg2map_) && defined(roadmap_meta_) &&
              ( defined(reg2map_bed_) || defined(dnase_) ) ) {
@@ -1073,7 +1118,6 @@ struct RuntimeEnvironment {
                     runtime_environment = runtime_environment
     }
 }
-
         # Check if there is an input for pr2 and pool it for the single replicate
         Boolean has_input_of_pool_ta_pr2 = length(spr.ta_pr2) == 1  # Check if there is only one pr2 TA
         if ( has_input_of_pool_ta_pr2 && !align_only && !true_rep_only ) {
@@ -1087,6 +1131,7 @@ struct RuntimeEnvironment {
 }
 
   Boolean has_input_of_jsd = defined(blacklist_) && length(select_all(nodup_bam_)) == 1
+  #Will run if enable_jsd is enabled
 if (has_input_of_jsd && enable_jsd) {
     # Fingerprint and JSD plot (even for one replicate)
     call jsd { input :
@@ -1102,6 +1147,7 @@ if (has_input_of_jsd && enable_jsd) {
     }
 }
 # Reproducibility QC for overlapping peaks
+#Num rep is set to 1 by default
  if ( !align_only && !true_rep_only && num_rep > 0 ) {
     # Reproducibility QC for overlapping peaks
       call reproducibility as reproducibility_overlap { input :
