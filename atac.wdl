@@ -12,13 +12,6 @@ workflow atac {
     meta {
         version: 'v2.2.3'
 
-        author: 'Jin wook Lee'
-        email: 'leepc12@gmail.com'
-        description: 'ENCODE ATAC-Seq pipeline. See https://github.com/ENCODE-DCC/atac-seq-pipeline for more details. e.g. example input JSON for Terra/Anvil.'
-        organization: 'ENCODE DCC'
-
-        specification_document: 'https://docs.google.com/document/d/1f0Cm4vRyDQDu0bMehHD7P7KOMxTOP-HiNoIvL1VcBt8/edit?usp=sharing'
-
         default_docker: 'encodedcc/atac-seq-pipeline:v2.2.3'
         default_singularity: 'https://encode-pipeline-singularity-image.s3.us-west-2.amazonaws.com/atac-seq-pipeline_v2.2.3.sif'
         default_conda: 'encd-atac'
@@ -80,12 +73,12 @@ workflow atac {
         String conda_python2 = 'encd-atac-py2'
 
         # group: pipeline_metadata
-        String title = 'Untitled'
-        String description = 'No description'
+        String title = 'ATAC-seq on Danaus plexippus'
+        String description = 'ATAC-seq on mid-fifth instar Danaus plexippus caterpillars'
 
         # group: reference_genome
-        File? genome_tsv
-        String? genome_name
+        File? genome_tsv = final_danaus_plexippus.tsv
+        String? genome_name = dp
         File? ref_fa
         File? ref_mito_fa
         File? bowtie2_idx_tar
@@ -106,9 +99,9 @@ workflow atac {
 
         # group: input_genomic_data
         Boolean? paired_end
-        Array[Boolean] paired_ends = []
-        Array[File] fastqs_rep1_R1 = []
-        Array[File] fastqs_rep1_R2 = []
+        Array[Boolean] paired_ends = [true]
+        Array[File] fastqs_rep1_R1 = [s3://sra-pub-src-16/SRR13566303/ATAC028_DpM5thHD2_R1.fastq.gz.1]
+        Array[File] fastqs_rep1_R2 = [s3://sra-pub-src-16/SRR13566303/ATAC028_DpM5thHD2_R2.fastq.gz.1]
         Array[File] fastqs_rep2_R1 = []
         Array[File] fastqs_rep2_R2 = []
         Array[File] fastqs_rep3_R1 = []
@@ -143,12 +136,12 @@ workflow atac {
         Boolean true_rep_only = false
         Boolean enable_xcor = false
         Boolean enable_count_signal_track = false
-        Boolean enable_idr = true
+        Boolean enable_idr = false
         Boolean enable_preseq = false
         Boolean enable_fraglen_stat = true
         Boolean enable_tss_enrich = true
         Boolean enable_annot_enrich = true
-        Boolean enable_jsd = true
+        Boolean enable_jsd = false
         Boolean enable_compare_to_roadmap = false
         Boolean enable_gc_bias = true
 
