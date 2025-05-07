@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-# ENCODE DCC bwa wrapper
-# Author: Jin Lee (leepc12@gmail.com), Daniel Kim
 
 import sys
 import os
