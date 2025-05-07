@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-# ENCODE annot_enrich (fraction of reads in annotated regions) wrapper
-# Author: Daniel Kim, Jin Lee (leepc12@gmail.com)
 
 import sys
 import os
