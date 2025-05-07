@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-# ENCODE DCC TSS enrich wrapper
-# Author: Daniel Kim, Jin Lee (leepc12@gmail.com)
 
 import matplotlib as mpl
 mpl.use('Agg')
