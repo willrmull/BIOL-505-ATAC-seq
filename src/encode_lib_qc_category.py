@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""
-ENCODE QC log/plot to HTML converter
 
-Author: Jin Lee (leepc12@gmail.com)
-"""
 
 from base64 import b64encode
 
