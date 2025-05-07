@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-# ENCODE preseq wrapper
-# Author: Daniel Kim, Jin Lee (leepc12@gmail.com)
 
 import warnings
 import numpy as np
