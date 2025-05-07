@@ -1,0 +1,11 @@
+{
+  "atac.docker": "encodedcc/atac-seq-pipeline:v2.2.2",
+  "atac.genome_tsv": "/home/c103b342/labs/BIOL-505-ATAC-seq/genome_resources/final_danaus_plexippus.tsv",
+  "atac.fastqs_rep1_R1": [
+    "s3://sra-pub-src-16/SRR13566303/ATAC028_DpM5thHD2_R1.fastq.gz.1"
+  ],
+  "atac.fastqs_rep1_R2": [
+    "s3://sra-pub-src-16/SRR13566303/ATAC028_DpM5thHD2_R2.fastq.gz.1"
+  ],
+  "atac.paired_end": true
+}
