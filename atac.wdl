@@ -1927,14 +1927,14 @@ task align {
         set -e
 
         # check if pipeline dependencies can be found
-        if [[ -z "$(which encode_task_trim_adapter.py 2> /dev/null || true)" ]]
+        if [[ -z "$(which src/encode_task_trim_adapter.py 2> /dev/null || true)" ]]
         then
           echo -e "\n* Error: pipeline environment (docker, singularity or conda) not found." 1>&2
           exit 3
         fi
 
         # trim adapter
-        bash $(which trim.sh) \
+        bash $(which src/encode_task_trim_adapter.py) \
             ${write_tsv(tmp_fastqs)} \
             ${'--adapter ' + adapter} \
             --adapters ${write_tsv(tmp_adapters)} \
@@ -1945,7 +1945,7 @@ task align {
 
         # align on trimmed/merged fastqs
         if [ '${aligner}' == 'bowtie2' ]; then
-            python3 $(which encode_task_bowtie2.py) \
+            python3 $(which src/encode_task_bowtie2.py) \
                 ${idx_tar} \
                 R1/*.fastq.gz \
                 ${if paired_end then 'R2/*.fastq.gz' else ''} \
@@ -1955,7 +1955,7 @@ task align {
                 ${'--nth ' + cpu}
         fi
 
-        bash $(which trim.sh) \
+        bash $(which src/encode_task_trim_adapter.py) \
             R1/*.fastq.gz $(ls *.bam) \
             ${'--mito-chr-name ' + mito_chr_name} \
             ${'--chrsz ' + chrsz} \
@@ -1994,7 +1994,7 @@ task frac_mito {
 
     command {
         set -e
-        python3 $(which encode_task_frac_mito.py) \
+        python3 $(which src/encode_task_frac_mito.py) \
             ${non_mito_samstat} ${mito_samstat}
     }
     output {
@@ -2048,7 +2048,7 @@ task filter {
     #configuring it based on input BAM properties and resource parameters
     command {
         set -e
-        python3 $(which encode_task_filter.py) \
+        python3 $(which src/encode_task_filter.py) \
             ${bam} \
             ${if paired_end then '--paired-end' else ''} \
             ${'--multimapping ' + multimapping} \
@@ -2107,7 +2107,7 @@ task bam2ta {
 
     command {
         set -e
-        python3 $(which encode_task_bam2ta.py) \
+        python3 $(which src/encode_task_bam2ta.py) \
             ${bam} \
             ${if paired_end then '--paired-end' else ''} \
             ${if disable_tn5_shift then '--disable-tn5-shift' else ''} \
@@ -2150,7 +2150,7 @@ task spr {
 
     command {
         set -e
-        python3 $(which encode_task_spr.py) \
+        python3 $(which src/encode_task_spr.py) \
             ${ta} \
             ${'--pseudoreplication-random-seed ' + pseudoreplication_random_seed} \
             ${if paired_end then '--paired-end' else ''}
@@ -2182,7 +2182,7 @@ task pool_ta {
     }
     command {
         set -e
-        python3 $(which encode_task_pool_ta.py) \
+        python3 $(which src/encode_task_pool_ta.py) \
             ${sep=' ' select_all(tas)} \
             ${'--prefix ' + prefix} \
             ${'--col ' + col}
@@ -2224,7 +2224,7 @@ task xcor {
 
     command {
         set -e
-        python3 $(which encode_task_xcor.py) \
+        python3 $(which src/encode_task_xcor.py) \
             ${ta} \
             ${if paired_end then '--paired-end' else ''} \
             ${'--mito-chr-name ' + mito_chr_name} \
@@ -2269,7 +2269,7 @@ task jsd {
 
     command {
         set -e
-        python3 $(which encode_task_jsd.py) \
+        python3 $(which src/encode_task_jsd.py) \
             ${sep=' ' select_all(nodup_bams)} \
             ${'--mapq-thresh '+ mapq_thresh} \
             ${'--blacklist '+ blacklist} \
@@ -2303,7 +2303,7 @@ task count_signal_track {
     Float mem_gb = 8.0
     command {
         set -e
-        python3 $(which encode_task_count_signal_track.py) \
+        python3 $(which src/encode_task_count_signal_track.py) \
             ${ta} \
             ${'--chrsz ' + chrsz} \
             ${'--mem-gb ' + mem_gb}
@@ -2355,7 +2355,7 @@ task call_peak {
         set -e
 
         if [ '${peak_caller}' == 'macs2' ]; then
-            python3 $(which scripts/peaks.py) \
+            python3 $(which src/encode_task_macs2_atac.py) \
                 ${ta} \
                 ${'--gensz ' + gensz} \
                 ${'--chrsz ' + chrsz} \
@@ -2365,7 +2365,7 @@ task call_peak {
                 ${'--mem-gb ' + mem_gb}
         fi
 
-        python3 $(which scripts/peaks.py) \
+        python3 $(which src/encode_task_macs2_atac.py) \
             $(ls *Peak.gz) \
             ${'--ta ' + ta} \
             ${'--regex-bfilt-peak-chr-name \'' + regex_bfilt_peak_chr_name + '\''} \
@@ -2423,7 +2423,7 @@ task macs2_signal_track {
 
     command {
         set -e
-        python3 $(which scripts/peaks.py) \
+        python3 $(which src/encode_task_macs2_atac.py) \
             ${ta} \
             ${'--gensz '+ gensz} \
             ${'--chrsz ' + chrsz} \
@@ -2469,7 +2469,7 @@ task idr {
     command {
         set -e
         touch null
-        python3 $(which encode_task_idr.py) \
+        python3 $(which src/encode_task_idr.py) \
             ${peak1} ${peak2} ${peak_pooled} \
             ${'--prefix ' + prefix} \
             ${'--idr-thresh ' + idr_thresh} \
@@ -2522,7 +2522,7 @@ task overlap {
     command {
         set -e
         touch null 
-        python3 $(which encode_task_overlap.py) \
+        python3 $(which src/encode_task_overlap.py) \
             ${peak1} ${peak2} ${peak_pooled} \
             ${'--prefix ' + prefix} \
             ${'--peak-type ' + peak_type} \
@@ -2570,7 +2570,7 @@ task reproducibility {
     }
     command {
         set -e
-        python3 $(which encode_task_reproducibility.py) \
+        python3 $(which src/encode_task_reproducibility.py) \
             ${sep=' ' peaks} \
             --peaks-pr ${sep=' ' peaks_pr} \
             ${'--peak-ppr '+ peak_ppr} \
@@ -2628,7 +2628,7 @@ task preseq {
 
     command {
         set -e
-        python3 $(which encode_task_preseq.py) \
+        python3 $(which src/encode_task_preseq.py) \
             ${if paired_end then '--paired-end' else ''} \
             ${'--bam ' + bam} \
             ${'--mem-gb ' + samtools_mem_gb} \
@@ -2667,7 +2667,7 @@ task annot_enrich {
     }
     command {
         set -e
-        python3 $(which encode_task_annot_enrich.py) \
+        python3 $(which src/encode_task_annot_enrich.py) \
             ${'--ta ' + ta} \
             ${'--blacklist ' + blacklist} \
             ${'--dnase ' + dnase} \
@@ -2701,7 +2701,7 @@ task tss_enrich {
     }
     command {
         set -e
-        python3 $(which scripts/TSS_Enrichment.py) \
+        python3 $(which src/encode_task_tss_enrich.py) \
             ${'--read-len ' + read_len} \
             ${'--nodup-bam ' + nodup_bam} \
             ${'--chrsz ' + chrsz} \
@@ -2741,7 +2741,7 @@ task fraglen_stat_pe {
 
     command {
         set -e
-        python3 $(which encode_task_fraglen_stat_pe.py) \
+        python3 $(which src/encode_task_fraglen_stat_pe.py) \
             ${'--nodup-bam ' + nodup_bam} \
             ${'--picard-java-heap ' + if defined(picard_java_heap) then picard_java_heap else (round(mem_gb * picard_java_heap_factor) + 'G')}
     }
@@ -2778,7 +2778,7 @@ task gc_bias {
 
     command {
         set -e
-        python3 $(which encode_task_gc_bias.py) \
+        python3 $(which src/encode_task_gc_bias.py) \
             ${'--nodup-bam ' + nodup_bam} \
             ${'--ref-fa ' + ref_fa} \
             ${'--picard-java-heap ' + if defined(picard_java_heap) then picard_java_heap else (round(mem_gb * picard_java_heap_factor) + 'G')}
@@ -2812,7 +2812,7 @@ task compare_signal_to_roadmap {
     }
     command {
         set -e
-        python3 $(which encode_task_compare_signal_to_roadmap.py) \
+        python3 $(which src/encode_task_compare_signal_to_roadmap.py) \
             ${'--bigwig ' + pval_bw} \
             ${'--dnase ' + dnase} \
             ${'--reg2map-bed ' + reg2map_bed} \
