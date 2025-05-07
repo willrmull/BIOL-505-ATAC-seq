@@ -960,7 +960,7 @@ struct RuntimeEnvironment {
                 runtime_environment = runtime_environment
             }
         }
-        # tasks factored out from ATAqC
+        # tasks factored out from ATAC
         Boolean has_input_of_tss_enrich = defined(nodup_bam_) && defined(tss_) && (
             defined(align.read_len) || i<length(read_len) )
         # Runs if tss_enrich is enabled, there is output for nodup_bam, tss is defined, and a read length is defined
@@ -1371,8 +1371,8 @@ task bam2ta {
         conda : runtime_environment.conda
     }
 }
-#erforms Self Pseudo-Replication (SPR) on a TAGALIGN (.ta) file. This is a common step in ATAC-seq quality control,
-for estimating reproducibility between pseudo-replicates.
+#Performs Self Pseudo-Replication (SPR) on a TAGALIGN (.ta) file. This is a common step in ATAC-seq quality control,
+#for estimating reproducibility between pseudo-replicates.
 task spr {
     input {
         File? ta
@@ -1882,7 +1882,7 @@ task qc_report {
         conda : runtime_environment.conda
     }
 }
-#eads and processes a genome configuration TSV file
+#reads and processes a genome configuration TSV file
 task read_genome_tsv {
     input {
         File? genome_tsv
