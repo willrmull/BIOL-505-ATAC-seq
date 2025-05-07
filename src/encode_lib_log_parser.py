@@ -1,9 +1,5 @@
 #!/usr/bin/env python
-"""
-ENCODE QC log parser wrapper which converts a log file into a dict
 
-Author: Jin Lee (leepc12@gmail.com)
-"""
 
 from collections import OrderedDict
 
