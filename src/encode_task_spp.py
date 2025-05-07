@@ -1,8 +1,5 @@
 #!/usr/bin/env python
 
-# ENCODE DCC spp call peak wrapper
-# Author: Jin Lee (leepc12@gmail.com)
-
 import sys
 import os
 import argparse
