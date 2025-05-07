@@ -1446,6 +1446,7 @@ workflow atac {
                 runtime_environment = runtime_environment
             }
         }
+        #Enables preseq is set to false by default
         if ( enable_preseq && defined(bam_) ) {
             call preseq { input :
                 bam = bam_,
@@ -1456,6 +1457,8 @@ workflow atac {
                 runtime_environment = runtime_environment
             }
         }
+        # Runs if gc_bias is enabled, nodup_bam is defined, and ref_fa is defined
+        # enable_gc_bias is set to true by default
         if ( enable_gc_bias && defined(nodup_bam_) && defined(ref_fa_) ) {
             call gc_bias { input :
                 nodup_bam = nodup_bam_,
@@ -1464,6 +1467,7 @@ workflow atac {
                 runtime_environment = runtime_environment
             }
         }
+         # Runs if annot_enrich is enabled and parameters are defined
         if ( enable_annot_enrich && defined(ta_) && defined(blacklist_) && defined(dnase_) && defined(prom_) && defined(enh_) ) {
             call annot_enrich { input :
                 ta = ta_,
@@ -1474,6 +1478,7 @@ workflow atac {
                 runtime_environment = runtime_environment
             }
         }
+        ## Runs if enable_compare_to_roadmap is enabled and parameters are defined
         if ( enable_compare_to_roadmap && defined(macs2_signal_track.pval_bw) &&
              defined(reg2map_) && defined(roadmap_meta_) &&
              ( defined(reg2map_bed_) || defined(dnase_) ) ) {
@@ -1578,7 +1583,8 @@ workflow atac {
     }
 
     Boolean has_input_of_jsd = defined(blacklist_) &&
-        length(select_all(nodup_bam_))==num_rep
+      length(select_all(nodup_bam_))==num_rep
+        #Will run if enable_jsd is enabled
     if ( has_input_of_jsd && num_rep > 0 && enable_jsd ) {
         # fingerprint and JS-distance plot
         call jsd { input :
@@ -1596,6 +1602,7 @@ workflow atac {
 
     Boolean has_input_of_call_peak_ppr1 = defined(pool_ta_pr1.ta_pooled)
     Boolean has_output_of_call_peak_ppr1 = defined(peak_ppr1)
+    # Reproducibility QC for overlapping peaks
     if ( has_input_of_call_peak_ppr1 && !has_output_of_call_peak_ppr1 &&
         !align_only && !true_rep_only && num_rep>1 ) {
         # call peaks on 1st pooled pseudo replicates
@@ -1915,6 +1922,7 @@ task align {
                 else transpose([fastqs_R1])
     Array[Array[String]] tmp_adapters = if paired_end then transpose([adapters_R1, adapters_R2])
                 else transpose([adapters_R1])
+     #shell script (inside a WDL command block) that orchestrates the steps for trimming adapters, aligning sequences, and processing alignment results.
     command {
         set -e
 
@@ -2003,7 +2011,11 @@ task frac_mito {
         conda : runtime_environment.conda
     }
 }
-
+# filters a BAM file by removing:
+#Low-quality alignments (based on MAPQ score)
+#Specific chromosomes 
+#Duplicate reads (optional, depending on no_dup_removal)
+#Optionally processes paired-end or single-end data
 task filter {
     input {
         File? bam
@@ -2025,12 +2037,15 @@ task filter {
         # runtime environment
         RuntimeEnvironment runtime_environment
     }
+    #lets the pipeline adjust resources based on file size, 
+    #avoiding crashes on large files and saving resources on small ones.
     Float input_file_size_gb = size(bam, "G")
     Float picard_java_heap_factor = 0.9
     Float mem_gb = 6.0 + mem_factor * input_file_size_gb
     Float samtools_mem_gb = 0.8 * mem_gb
     Int disk_gb = round(20.0 + disk_factor * input_file_size_gb)
-
+     #builds a shell command to run encode_task_filter.py, 
+    #configuring it based on input BAM properties and resource parameters
     command {
         set -e
         python3 $(which encode_task_filter.py) \
@@ -2047,6 +2062,8 @@ task filter {
             ${'--nth ' + cpu} \
             ${'--picard-java-heap ' + if defined(picard_java_heap) then picard_java_heap else (round(mem_gb * picard_java_heap_factor) + 'G')}
     }
+    #collects the key output files (BAM, index, and QC reports) produced by the filtering process,
+    #making them available for downstream tasks in the workflow
     output {
         File nodup_bam = glob('*.bam')[0]
         File nodup_bai = glob('*.bai')[0]
@@ -2054,6 +2071,7 @@ task filter {
         File dup_qc = glob('*.dup.qc')[0]
         File lib_complexity_qc = glob('*.lib_complexity.qc')[0]
     }
+    #specifies the computational resources and environment required to run the filter task
     runtime {
         cpu : cpu
         memory : '${mem_gb} GB'
@@ -2065,7 +2083,8 @@ task filter {
         conda : runtime_environment.conda
     }
 }
-
+#converts a BAM file into a TAGALIGN file, which is a simplified format often used in 
+#ATAC-seq for peak calling
 task bam2ta {
     input {
         File? bam
@@ -2111,7 +2130,8 @@ task bam2ta {
         conda : runtime_environment.conda
     }
 }
-
+#Performs Self Pseudo-Replication (SPR) on a TAGALIGN (.ta) file. This is a common step in ATAC-seq quality control,
+#for estimating reproducibility between pseudo-replicates.
 task spr {
     input {
         File? ta
@@ -2150,7 +2170,7 @@ task spr {
         conda : runtime_environment.conda
     }
 }
-
+#merges multiple TAGALIGN (.ta) files into a single pooled TAGALIGN file
 task pool_ta {
     input {
         Array[File?] tas     # TAG-ALIGNs to be merged
@@ -2270,7 +2290,8 @@ task jsd {
         conda : runtime_environment.conda
     }
 }
-
+#generates a signal track from a TAGALIGN file by counting the number of mapped reads per genomic region (e.g., per base pair)
+and using a chromosome sizes file to ensure the counts are scaled appropriately.
 task count_signal_track {
     input {
         File? ta             # tag-align
@@ -2302,7 +2323,7 @@ task count_signal_track {
         conda : runtime_environment.conda
     }
 }
-
+#calling peaks from a TAGALIGN file from ATAC-seq data using a peak calling algorithm such as MACS2
 task call_peak {
     input {
         String peak_caller
@@ -2377,7 +2398,9 @@ task call_peak {
         conda : runtime_environment.conda
     }
 }
-
+#generates a signal track from a TAGALIGN file using the MACS2 peak calling tool, 
+#and incorporates smoothing and statistical filtering. 
+#This task would produce a signal track that can be visualized
 task macs2_signal_track {
     input {
         File? ta
@@ -2665,7 +2688,7 @@ task annot_enrich {
         conda : runtime_environment.conda
     }
 }
-
+#calculates TSS (Transcription Start Site) enrichment, a common quality control (QC) metric for ATAC-seq
 task tss_enrich {
     # based on metaseq, which is still in python2
     # python2 environment is required for this task
@@ -2703,7 +2726,8 @@ task tss_enrich {
         conda : runtime_environment.conda
     }
 }
-
+#calculates fragment length statistics for paired-end (PE) sequencing data, using a deduplicated BAM file 
+#quality control that depends on fragment size distributions.
 task fraglen_stat_pe {
     # for PE only
     input {
@@ -2738,7 +2762,7 @@ task fraglen_stat_pe {
         conda : runtime_environment.conda
     }
 }
-
+#analyzes GC bias in sequencing data using a deduplicated BAM file (nodup_bam) and a reference genome FASTA file
 task gc_bias {
     input {
         File? nodup_bam
@@ -2812,7 +2836,8 @@ task compare_signal_to_roadmap {
         conda : runtime_environment.conda
     }
 }
-
+#generates a comprehensive quality control (QC) report
+#that summarizes the performance and quality metrics of the entire sequencing pipeline
 task qc_report {
     input {
         String pipeline_ver
@@ -2967,7 +2992,7 @@ task qc_report {
         conda : runtime_environment.conda
     }
 }
-
+#reads and processes a genome configuration TSV file
 task read_genome_tsv {
     input {
         File? genome_tsv
