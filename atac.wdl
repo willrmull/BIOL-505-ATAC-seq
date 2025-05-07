@@ -1,5 +1,9 @@
+#This input block configures how the pipeline should run, including:
+#What software environment to use (docker, conda, etc.).
+#What reference genome and experimental data to use.
+#Optional tuning parameters for trimming, alignment, peak calling, etc.
 version 1.0
-
+#Provide container or environment info
 struct RuntimeEnvironment {
     String docker
     String singularity
@@ -233,7 +237,13 @@ workflow atac {
         String? fraglen_stat_picard_java_heap
         String? gc_bias_picard_java_heap
     }
-
+ #This block of code configures the resource requirements for various tasks in the ENCODE ATAC-seq pipeline. 
+    #It helps the pipeline schedule and run jobs on a compute backend (e.g. a cloud provider, SLURM, or a local workstation) by specifying:
+    #How many CPU cores each task should use
+    #How much memory to allocate (based on genome size)
+    #How much disk space to reserve
+    #Maximum time a task is allowed to run
+    #Optional Java heap size overrides for Picard-based tools
     parameter_meta {
         docker: {
             description: 'Default Docker image URI to run WDL tasks.',
@@ -966,23 +976,28 @@ workflow atac {
     RuntimeEnvironment runtime_environment_python2 = {
         'docker': docker, 'singularity': singularity, 'conda': conda_python2
     }
-
+     #Initalize the type of aligner, pealk caller and peak type to be used
     String aligner = 'bowtie2'
     String peak_caller = 'macs2'
     String peak_type = 'narrowPeak'
-    
-    # read genome data and paths
+     #Checks if genome is defined in the genome_tsv file
+    #If true, then will call the read_genome_tsv task
     if ( defined(genome_tsv) ) {
         call read_genome_tsv { input:
             genome_tsv = genome_tsv,
             runtime_environment = runtime_environment
         }
     }
+     #Initalizing values from reference genome into files
+    #Select first will check if the first value is defined, if it is not then the read_genome_tsv value will be used
     File ref_fa_ = select_first([ref_fa, read_genome_tsv.ref_fa])
     File bowtie2_idx_tar_ = select_first([bowtie2_idx_tar, read_genome_tsv.bowtie2_idx_tar])
     File bowtie2_mito_idx_tar_ = select_first([bowtie2_mito_idx_tar, read_genome_tsv.bowtie2_mito_idx_tar])
     File chrsz_ = select_first([chrsz, read_genome_tsv.chrsz])
     String gensz_ = select_first([gensz, read_genome_tsv.gensz])
+
+    #Declaring optinal file variables based on if blacklist was defined
+    #If it was not defined, then the read_genome_tsv value will be used
     File? blacklist1_ = if defined(blacklist) then blacklist
         else read_genome_tsv.blacklist
     File? blacklist2_ = if defined(blacklist2) then blacklist2
@@ -998,6 +1013,10 @@ workflow atac {
             runtime_environment = runtime_environment
         }
     }
+     # Assignes a blacklist file based on the length of the blacklists array
+    #If the length is greater than one, then the pooled blacklist will be used
+    #If the length is 1 then the first file is used
+    #If the length is 0, then the second blacklist file will be used
     File? blacklist_ = if length(blacklists) > 1 then pool_blacklist.ta_pooled
         else if length(blacklists) > 0 then blacklists[0]
         else blacklist2_
@@ -1021,7 +1040,7 @@ workflow atac {
     File? roadmap_meta_ = if defined(roadmap_meta) then roadmap_meta
         else read_genome_tsv.roadmap_meta
 
-    ### temp vars (do not define these)
+    ### temp variables (do not define these)
     String aligner_ = aligner
     String peak_caller_ = peak_caller
     String peak_type_ = peak_type
@@ -1031,7 +1050,7 @@ workflow atac {
     Int cap_num_peak_ = cap_num_peak
     Int mapq_thresh_ = mapq_thresh
 
-    # temporary 2-dim fastqs array [rep_id][merge_id]
+    # Wrap the R1 FASTQ files into a nested array (Array[Array[File]])
     Array[Array[File]] fastqs_R1 = 
         if length(fastqs_rep10_R1)>0 then
             [fastqs_rep1_R1, fastqs_rep2_R1, fastqs_rep3_R1, fastqs_rep4_R1, fastqs_rep5_R1,
@@ -1085,7 +1104,7 @@ workflow atac {
         else length(peaks)
     Int num_rep = num_rep_peak
 
-    # sanity check for inputs
+    # Verifying that program is funtionally correctly
     if ( num_rep == 0 ) {
         call raise_exception as error_input_data  { input:
             msg = 'No FASTQ/BAM/TAG-ALIGN/PEAK defined in your input JSON. Check if your FASTQs are defined as "atac.fastqs_repX_RY". DO NOT MISS suffix _R1 even for single ended FASTQ.',
@@ -1093,7 +1112,7 @@ workflow atac {
         }
     }
 
-    # align each replicate
+    # Check if paired_end is defined; otherwise, use the global paired_end value.
     scatter(i in range(num_rep)) {
         # to override endedness definition for individual replicate
         #     paired_end will override paired_ends[i]
@@ -1102,6 +1121,7 @@ workflow atac {
 
         Boolean has_input_of_align = i<length(fastqs_R1) && length(fastqs_R1[i])>0
         Boolean has_output_of_align = i<length(bams)
+        # If there is an input FASTQ file and no output BAM file then call the align task
         if ( has_input_of_align && !has_output_of_align ) {
             call align { input :
                 fastqs_R1 = fastqs_R1[i],
@@ -1126,6 +1146,7 @@ workflow atac {
                 runtime_environment = runtime_environment
             }
         }
+        #If there is an output BAM file then assign it to file
         File? bam_ = if has_output_of_align then bams[i] else align.bam
 
         # mito only mapping to get frac mito qc
@@ -1166,7 +1187,8 @@ workflow atac {
 
         Boolean has_input_of_filter = has_output_of_align || defined(align.bam)
         Boolean has_output_of_filter = i<length(nodup_bams)
-        # skip if we already have output of this step
+         #If there is an input BAM file which has not been filtered the call the filter task
+        #If there is an output nodup BAM file then assign it to file
         if ( has_input_of_filter && !has_output_of_filter ) {
             call filter { input :
                 bam = bam_,
@@ -1188,7 +1210,7 @@ workflow atac {
             }
         }
         File? nodup_bam_ = if has_output_of_filter then nodup_bams[i] else filter.nodup_bam
-
+        # If there is a input BAM file which has not been converted to TAG-ALIGN then call the bam2ta task
         Boolean has_input_of_bam2ta = has_output_of_filter || defined(filter.nodup_bam)
         Boolean has_output_of_bam2ta = i<length(tas)
         if ( has_input_of_bam2ta && !has_output_of_bam2ta ) {
@@ -1206,9 +1228,12 @@ workflow atac {
                 runtime_environment = runtime_environment
             }
         }
+        #If it has an output TAG-ALIGN file then assign it to file
         File? ta_ = if has_output_of_bam2ta then tas[i] else bam2ta.ta
 
         Boolean has_input_of_xcor = has_output_of_align || defined(align.bam)
+        # If there is an output of align and cross correlation analysis is enabled then call the following tasks
+        # enable_xcor is set to false by default
         if ( has_input_of_xcor && enable_xcor ) {
             call filter as filter_no_dedup { input :
                 bam = bam_,
@@ -1257,6 +1282,7 @@ workflow atac {
         }
 
         Boolean has_input_of_macs2_signal_track = has_output_of_bam2ta || defined(bam2ta.ta)
+        # If there is an input TAG-ALIGN file then call macs2_signal_track task
         if ( has_input_of_macs2_signal_track ) {
             # generate count signal track
             call macs2_signal_track { input :
@@ -1276,6 +1302,9 @@ workflow atac {
 
         Boolean has_input_of_call_peak = has_output_of_bam2ta || defined(bam2ta.ta)
         Boolean has_output_of_call_peak = i<length(peaks)
+         # Runs if there is an input TAG-ALIGN file, no output peak file, and if the program is not set to align only
+        #Align only is set to false by default
+        # Assign output of call_peak to peak_ if it is defined
         if ( has_input_of_call_peak && !has_output_of_call_peak && !align_only ) {
             # call peaks on tagalign
             call call_peak { input :
@@ -1303,6 +1332,7 @@ workflow atac {
         File? peak_ = if has_output_of_call_peak then peaks[i] else call_peak.peak
 
         Boolean has_input_of_spr = has_output_of_bam2ta || defined(bam2ta.ta)
+        # If there is an input TAG-ALIGN file then call the spr task
         if ( has_input_of_spr && !align_only && !true_rep_only ) {
             call spr { input :
                 ta = ta_,
@@ -1316,6 +1346,10 @@ workflow atac {
 
         Boolean has_input_of_call_peak_pr1 = defined(spr.ta_pr1)
         Boolean has_output_of_call_peak_pr1 = i<length(peaks_pr1)
+        # Calls if the first replicate assigned in spr task is defined
+        # Runs call peak on the 1st pseudo replicated tagalign
+        # Align only and true_rep_only are set to false by default
+        # Assigns output to file
         if ( has_input_of_call_peak_pr1 && !has_output_of_call_peak_pr1 &&
             !align_only && !true_rep_only ) {
             # call peaks on 1st pseudo replicated tagalign 
@@ -1346,6 +1380,10 @@ workflow atac {
 
         Boolean has_input_of_call_peak_pr2 = defined(spr.ta_pr2)
         Boolean has_output_of_call_peak_pr2 = i<length(peaks_pr2)
+        # Runs if the second replicate assigned in spr task is defined
+        # Rins call peak on the 2nd pseudo replicated tagalign
+        # Align only and true_rep_only are set to false by default
+        # Assigns output to file
         if ( has_input_of_call_peak_pr2 && !has_output_of_call_peak_pr2 &&
             !align_only && !true_rep_only ) {
             # call peaks on 2nd pseudo replicated tagalign 
@@ -1375,6 +1413,7 @@ workflow atac {
             else call_peak_pr2.peak
 
         Boolean has_input_of_count_signal_track = has_output_of_bam2ta || defined(bam2ta.ta)
+        # enable_count_signal_track is set to false by default
         if ( has_input_of_count_signal_track && enable_count_signal_track ) {
             # generate count signal track
             call count_signal_track { input :
@@ -1383,9 +1422,11 @@ workflow atac {
                 runtime_environment = runtime_environment
             }
         }
-        # tasks factored out from ATAqC
+        # tasks factored out from ATAC
         Boolean has_input_of_tss_enrich = defined(nodup_bam_) && defined(tss_) && (
             defined(align.read_len) || i<length(read_len) )
+         # Runs if tss_enrich is enabled, there is output for nodup_bam, tss is defined, and a read length is defined
+        # enable_tss_enrich is set to true by default
         if ( enable_tss_enrich && has_input_of_tss_enrich ) {
             call tss_enrich { input :
                 read_len = if i<length(read_len) then read_len[i]
@@ -1396,6 +1437,8 @@ workflow atac {
                 runtime_environment = runtime_environment_python2
             }
         }
+        # Runs if fraglen_stat is enabled, nodup_bam is defined, and paired_end is true
+        # enable_fraglen_stat is set to true by default
         if ( enable_fraglen_stat && paired_end_ && defined(nodup_bam_) ) {
             call fraglen_stat_pe { input :
                 nodup_bam = nodup_bam_,
