@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-# ENCODE DCC common functions
-# Author: Jin Lee (leepc12@gmail.com)
 
 import sys
 import os
