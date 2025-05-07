@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-# ENCODE DCC compare signal to roadmap wrapper
-# Author: Daniel Kim, Jin Lee (leepc12@gmail.com)
 
 import warnings
 from matplotlib import pyplot as plt
