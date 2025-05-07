@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-# ENCODE DCC BAM 2 TAGALIGN wrapper
-# Author: Jin Lee (leepc12@gmail.com)
 
 import sys
 import os
