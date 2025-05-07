@@ -1,4 +1,4 @@
-# written by Nathan Boley, from https://github.com/nboley/GGR_code
+
 
 import sys
 import gzip
