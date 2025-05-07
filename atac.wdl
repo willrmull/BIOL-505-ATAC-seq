@@ -1934,7 +1934,7 @@ task align {
         fi
 
         # trim adapter
-        python3 $(which encode_task_trim_adapter.py) \
+        bash $(which trim.sh) \
             ${write_tsv(tmp_fastqs)} \
             ${'--adapter ' + adapter} \
             --adapters ${write_tsv(tmp_adapters)} \
@@ -1955,7 +1955,7 @@ task align {
                 ${'--nth ' + cpu}
         fi
 
-        python3 $(which encode_task_post_align.py) \
+        bash $(which trim.sh) \
             R1/*.fastq.gz $(ls *.bam) \
             ${'--mito-chr-name ' + mito_chr_name} \
             ${'--chrsz ' + chrsz} \
@@ -2355,7 +2355,7 @@ task call_peak {
         set -e
 
         if [ '${peak_caller}' == 'macs2' ]; then
-            python3 $(which encode_task_macs2_atac.py) \
+            python3 $(which scripts/peaks.py) \
                 ${ta} \
                 ${'--gensz ' + gensz} \
                 ${'--chrsz ' + chrsz} \
@@ -2365,7 +2365,7 @@ task call_peak {
                 ${'--mem-gb ' + mem_gb}
         fi
 
-        python3 $(which encode_task_post_call_peak_atac.py) \
+        python3 $(which scripts/peaks.py) \
             $(ls *Peak.gz) \
             ${'--ta ' + ta} \
             ${'--regex-bfilt-peak-chr-name \'' + regex_bfilt_peak_chr_name + '\''} \
@@ -2423,7 +2423,7 @@ task macs2_signal_track {
 
     command {
         set -e
-        python3 $(which encode_task_macs2_signal_track_atac.py) \
+        python3 $(which scripts/peaks.py) \
             ${ta} \
             ${'--gensz '+ gensz} \
             ${'--chrsz ' + chrsz} \
@@ -2690,8 +2690,6 @@ task annot_enrich {
 }
 #calculates TSS (Transcription Start Site) enrichment, a common quality control (QC) metric for ATAC-seq
 task tss_enrich {
-    # based on metaseq, which is still in python2
-    # python2 environment is required for this task
     input {
         Int? read_len
         File? nodup_bam
@@ -2703,7 +2701,7 @@ task tss_enrich {
     }
     command {
         set -e
-        python2 $(which encode_task_tss_enrich.py) \
+        python3 $(which scripts/TSS_Enrichment.py) \
             ${'--read-len ' + read_len} \
             ${'--nodup-bam ' + nodup_bam} \
             ${'--chrsz ' + chrsz} \
