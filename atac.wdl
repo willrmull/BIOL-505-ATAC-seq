@@ -1526,7 +1526,8 @@ workflow atac {
             runtime_environment = runtime_environment
         }
     }
-
+    #conditionally performs peak calling and signal track generation on pooled tagAlign data if certain 
+    #criteria—like having multiple replicates and not being in alignment-only mode—are met.
     Boolean has_input_of_call_peak_pooled = defined(pool_ta.ta_pooled)
     Boolean has_output_of_call_peak_pooled = defined(peak_pooled)
     if ( has_input_of_call_peak_pooled && !has_output_of_call_peak_pooled &&
@@ -1554,6 +1555,8 @@ workflow atac {
                 else runtime_environment
         }
     }
+    #sets the pooled peak file to a pre-existing output if available, or to the result of a recent peak calling task if not. 
+    #It then conditionally runs a signal track generation task on the pooled tagAlign data if pooling is enabled
     File? peak_pooled_ = if has_output_of_call_peak_pooled then peak_pooled
         else call_peak_pooled.peak
 
@@ -1565,7 +1568,8 @@ workflow atac {
             runtime_environment = runtime_environment
         }
     }
-
+    #checks if pooled tagAlign input exists and if there are multiple replicates. 
+    #If so, it runs the macs2_signal_track task to generate a MACS2-based signal track
     Boolean has_input_of_macs2_signal_track_pooled = defined(pool_ta.ta_pooled)
     if ( has_input_of_macs2_signal_track_pooled && num_rep>1 ) {
         call macs2_signal_track as macs2_signal_track_pooled { input :
@@ -1581,7 +1585,8 @@ workflow atac {
             runtime_environment = runtime_environment_macs2
         }
     }
-
+    #verifies that all required BAM files and the blacklist are available before running, and checks that JSD analysis is enabled and replicates are present. 
+    #If so, it executes the jsd task to generate fingerprint plots and Jensen-Shannon distance metrics for quality assessment.
     Boolean has_input_of_jsd = defined(blacklist_) &&
       length(select_all(nodup_bam_))==num_rep
         #Will run if enable_jsd is enabled
@@ -1599,7 +1604,9 @@ workflow atac {
             runtime_environment = runtime_environment
         }
     }
-
+    #checks if pooled pseudo-replicate tagAlign input is available and if peak calling has not been performed for it yet,
+    #ensuring that the task is only run when certain conditions are met. If the conditions are satisfied,
+    #it executes the call_peak task on the first pooled pseudo-replicate to perform peak calling for reproducibility quality control
     Boolean has_input_of_call_peak_ppr1 = defined(pool_ta_pr1.ta_pooled)
     Boolean has_output_of_call_peak_ppr1 = defined(peak_ppr1)
     # Reproducibility QC for overlapping peaks
@@ -1630,7 +1637,9 @@ workflow atac {
     }
     File? peak_ppr1_ = if has_output_of_call_peak_ppr1 then peak_ppr1
         else call_peak_ppr1.peak
-
+    #assigns the pooled peak file from the first pseudo-replicate if available or runs peak calling on the first replicate. 
+    #It then checks for the availability of input for the second pooled pseudo-replicate,
+    #and if necessary, performs peak calling for the second replicate under the same conditions as the first
     Boolean has_input_of_call_peak_ppr2 = defined(pool_ta_pr2.ta_pooled)
     Boolean has_output_of_call_peak_ppr2 = defined(peak_ppr2)
     if ( has_input_of_call_peak_ppr2 && !has_output_of_call_peak_ppr2 &&
@@ -1983,7 +1992,7 @@ task align {
         conda : runtime_environment.conda
     }
 }
-
+# calculates the fraction of mitochondrial reads from given SAMSTAT files
 task frac_mito {
     input {
         File? non_mito_samstat
@@ -2201,7 +2210,8 @@ task pool_ta {
         conda : runtime_environment.conda
     }
 }
-
+#performs cross-correlation analysis on a given tagAlign (TA) file, 
+#optionally subsampling the reads and considering mitochondrial chromosome data, and generates a plot and quality score.
 task xcor {
     input {
         File? ta
@@ -2248,7 +2258,8 @@ task xcor {
         conda : runtime_environment.conda
     }
 }
-
+#calculates the Jensen-Shannon distance (JSD) between a set of BAM files, 
+#applying a MAPQ threshold and filtering using a blacklist, and generates a quality control report and plot
 task jsd {
     input {
         Array[File?] nodup_bams
@@ -2503,7 +2514,8 @@ task idr {
         conda : runtime_environment.conda
     }
 }
-
+#identifies overlapping peaks between two peak files (and optionally a pooled peak file), 
+#applying filtering based on a blacklist and calculating FRiP (Fraction of Reads in Peaks) if a tagAlign file is provided.
 task overlap {
     input {
         String prefix         # prefix for IDR output file
@@ -2552,7 +2564,8 @@ task overlap {
         conda : runtime_environment.conda
     }
 }
-
+#assesses peak reproducibility between true and pseudo-replicates, 
+#generating optimal and conservative peak files in various formats while performing quality control checks.
 task reproducibility {
     input {
         String prefix
@@ -2606,7 +2619,7 @@ task reproducibility {
         conda : runtime_environment.conda
     }
 }
-
+#estimates library complexity and generates preseq plots for BAM files, with support for both paired-end and single-end data. 
 task preseq {
     input {
         File? bam
@@ -2652,7 +2665,8 @@ task preseq {
         conda : runtime_environment.conda
     }
 }
-
+#calculates the fraction of reads in annotated regions, using various input files such as tagAlign (TA),
+#blacklist, and annotation files (e.g., DNase, promoter, and enhancer regions)
 task annot_enrich {
     input {
         # Fraction of Reads In Annotated Regions
@@ -2798,7 +2812,8 @@ task gc_bias {
         conda : runtime_environment.conda
     }
 }
-
+#compares the input signal (e.g., p-value bigWig file)
+#to reference Roadmap Epigenomics annotations using DNase and regulatory region data
 task compare_signal_to_roadmap {
     input {
         File? pval_bw
