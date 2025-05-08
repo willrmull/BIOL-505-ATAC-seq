@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-
+# Import necessary libraries and modules
 import sys
 import os
 import argparse
@@ -14,10 +14,13 @@ from encode_lib_genomic import (
     get_samtools_res_param
 )
 
-
+# Function to parse command-line arguments
 def parse_arguments():
+    # Initialize argument parser
     parser = argparse.ArgumentParser(
         prog='ENCODE DCC filter.')
+    
+    # Add arguments to the parser
     parser.add_argument('bam', type=str,
                         help='Path for raw BAM file.')
     parser.add_argument(
@@ -55,25 +58,36 @@ def parse_arguments():
                                  'WARNING', 'CRITICAL', 'ERROR',
                                  'CRITICAL'],
                         help='Log level')
+    
+    # Parse the arguments
     args = parser.parse_args()
 
+    # Set logging level
     log.setLevel(args.log_level)
+    
+    # Log the command line call
     log.info(sys.argv)
+    
+    # Return parsed arguments
     return args
 
 
+# Function to remove unmapped and low-quality reads for single-end BAM files
 def rm_unmapped_lowq_reads_se(bam, multimapping, mapq_thresh, nth, mem_gb, out_dir):
     """There are pipes with multiple samtools commands.
     For such pipes, use multiple threads (-@) for only one of them.
     Priority is on sort > index > fixmate > view.
     """
-    prefix = os.path.join(out_dir,
-                          os.path.basename(strip_ext_bam(bam)))
+    # Prepare file names for output
+    prefix = os.path.join(out_dir, os.path.basename(strip_ext_bam(bam)))
     filt_bam = '{}.filt.bam'.format(prefix)
 
+    # If multimapping is enabled, handle it specifically
     if multimapping:
+        # Sort by query name first
         qname_sort_bam = samtools_name_sort(bam, nth, mem_gb, out_dir)
 
+        # Run pipeline of samtools commands for filtering
         run_shell_cmd(
             'samtools view -h {qname_sort_bam} | '
             '$(which assign_multimappers.py) -k {multimapping} | '
@@ -86,8 +100,9 @@ def rm_unmapped_lowq_reads_se(bam, multimapping, mapq_thresh, nth, mem_gb, out_d
                 res_param=get_samtools_res_param('sort', nth=nth, mem_gb=mem_gb),
             )
         )
-        rm_f(qname_sort_bam)  # remove temporary files
+        rm_f(qname_sort_bam)  # Remove temporary files
     else:
+        # No multimapping, filter by MAPQ threshold
         run_shell_cmd(
             'samtools view -F 1804 -q {mapq_thresh} -u {bam} | '
             'samtools sort /dev/stdin -o {filt_bam} -T {prefix} {res_param}'.format(
@@ -99,20 +114,23 @@ def rm_unmapped_lowq_reads_se(bam, multimapping, mapq_thresh, nth, mem_gb, out_d
             )
         )
 
+    # Return the filtered BAM
     return filt_bam
 
 
+# Function to remove unmapped and low-quality reads for paired-end BAM files
 def rm_unmapped_lowq_reads_pe(bam, multimapping, mapq_thresh, nth, mem_gb, out_dir):
     """There are pipes with multiple samtools commands.
     For such pipes, use multiple threads (-@) for only one of them.
     Priority is on sort > index > fixmate > view.
     """
-    prefix = os.path.join(out_dir,
-                          os.path.basename(strip_ext_bam(bam)))
+    # Prepare file names for output
+    prefix = os.path.join(out_dir, os.path.basename(strip_ext_bam(bam)))
     filt_bam = '{}.filt.bam'.format(prefix)
     tmp_filt_bam = '{}.tmp_filt.bam'.format(prefix)
     fixmate_bam = '{}.fixmate.bam'.format(prefix)
 
+    # If multimapping is enabled, handle it specifically
     if multimapping:
         run_shell_cmd(
             'samtools view -F 524 -f 2 -u {bam} | '
@@ -135,6 +153,7 @@ def rm_unmapped_lowq_reads_pe(bam, multimapping, mapq_thresh, nth, mem_gb, out_d
             )
         )
     else:
+        # No multimapping, filter by MAPQ threshold
         run_shell_cmd(
             'samtools view -F 1804 -f 2 -q {mapq_thresh} -u {bam} | '
             'samtools sort -n /dev/stdin -o {tmp_filt_bam} -T {prefix} {res_param}'.format(
@@ -155,6 +174,7 @@ def rm_unmapped_lowq_reads_pe(bam, multimapping, mapq_thresh, nth, mem_gb, out_d
 
     rm_f(tmp_filt_bam)
 
+    # Final sorting
     run_shell_cmd(
         'samtools view -F 1804 -f 2 -u {fixmate_bam} | '
         'samtools sort /dev/stdin -o {filt_bam} -T {prefix} {res_param}'.format(
@@ -165,15 +185,17 @@ def rm_unmapped_lowq_reads_pe(bam, multimapping, mapq_thresh, nth, mem_gb, out_d
         )
     )
 
+    # Clean up
     rm_f(fixmate_bam)
 
+    # Check if the filtered BAM is empty after filtering
     log.info(
         'Checking if filtered (but not deduped) BAM is empty '
         'after filtering with "samtools view -F 1804 -f 2".'
     )
     if bam_is_empty(filt_bam, nth):
         raise ValueError(
-            'No reads found aftering filtering "samtools fixmate"d PE BAM with '
+            'No reads found after filtering "samtools fixmate"d PE BAM with '
             '"samtools view -F 1804 -f 2". '
             'Reads are not properly paired even though mapping rate is good? '
         )
@@ -181,18 +203,20 @@ def rm_unmapped_lowq_reads_pe(bam, multimapping, mapq_thresh, nth, mem_gb, out_d
     return filt_bam
 
 
+# Function to mark duplicates in a BAM file using Picard
 def mark_dup_picard(bam, out_dir, java_heap=None):  # shared by both se and pe
-    prefix = os.path.join(out_dir,
-                          os.path.basename(strip_ext_bam(bam)))
-    # strip extension appended in the previous step
-    prefix = strip_ext(prefix, 'filt')
+    prefix = os.path.join(out_dir, os.path.basename(strip_ext_bam(bam)))
+    prefix = strip_ext(prefix, 'filt')  # Remove extension added in filtering
     dupmark_bam = '{}.dupmark.bam'.format(prefix)
     dup_qc = '{}.dup.qc'.format(prefix)
+
+    # Set Java heap size for Picard (default 4GB)
     if java_heap is None:
         java_heap_param = '-Xmx4G'
     else:
         java_heap_param = '-Xmx{}'.format(java_heap)
 
+    # Run Picard MarkDuplicates command to mark duplicates
     run_shell_cmd(
         'java {java_heap_param} -XX:ParallelGCThreads=1 '
         '-jar {picard} MarkDuplicates '
@@ -211,17 +235,18 @@ def mark_dup_picard(bam, out_dir, java_heap=None):  # shared by both se and pe
             dup_qc=dup_qc,
         )
     )
+
     return dupmark_bam, dup_qc
 
 
+# Function to mark duplicates in a BAM file using Sambamba
 def mark_dup_sambamba(bam, nth, out_dir):  # shared by both se and pe
-    prefix = os.path.join(out_dir,
-                          os.path.basename(strip_ext_bam(bam)))
-    # strip extension appended in the previous step
+    prefix = os.path.join(out_dir, os.path.basename(strip_ext_bam(bam)))
     prefix = strip_ext(prefix, 'filt')
     dupmark_bam = '{}.dupmark.bam'.format(prefix)
     dup_qc = '{}.dup.qc'
 
+    # Build and execute the sambamba command to mark duplicates
     cmd = 'sambamba markdup -t {} --hash-table-size=17592186044416 '
     cmd += '--overflow-list-size=20000000 '
     cmd += '--io-buffer-size=256 {} {} 2> {}'
@@ -231,16 +256,17 @@ def mark_dup_sambamba(bam, nth, out_dir):  # shared by both se and pe
         dupmark_bam,
         dup_qc)
     run_shell_cmd(cmd)
+
     return dupmark_bam, dup_qc
 
 
+# Function to remove duplicates for single-end BAM files
 def rm_dup_se(dupmark_bam, nth, out_dir):
-    prefix = os.path.join(out_dir,
-                          os.path.basename(strip_ext_bam(dupmark_bam)))
-    # strip extension appended in the previous step
+    prefix = os.path.join(out_dir, os.path.basename(strip_ext_bam(dupmark_bam)))
     prefix = strip_ext(prefix, 'dupmark')
     nodup_bam = '{}.nodup.bam'.format(prefix)
 
+    # Remove duplicates using samtools
     run_shell_cmd(
         'samtools view -F 1804 -b {dupmark_bam} {res_param} > {nodup_bam}'.format(
             dupmark_bam=dupmark_bam,
@@ -251,13 +277,13 @@ def rm_dup_se(dupmark_bam, nth, out_dir):
     return nodup_bam
 
 
+# Function to remove duplicates for paired-end BAM files
 def rm_dup_pe(dupmark_bam, nth, out_dir):
-    prefix = os.path.join(out_dir,
-                          os.path.basename(strip_ext_bam(dupmark_bam)))
-    # strip extension appended in the previous step
+    prefix = os.path.join(out_dir, os.path.basename(strip_ext_bam(dupmark_bam)))
     prefix = strip_ext(prefix, 'dupmark')
     nodup_bam = '{}.nodup.bam'.format(prefix)
 
+    # Remove duplicates using samtools for paired-end BAM
     run_shell_cmd(
         'samtools view -F 1804 -f 2 -b {dupmark_bam} {res_param} > {nodup_bam}'.format(
             dupmark_bam=dupmark_bam,
@@ -268,58 +294,24 @@ def rm_dup_pe(dupmark_bam, nth, out_dir):
     return nodup_bam
 
 
+# Function to generate library complexity (PBC) QC for single-end BAM files
 def pbc_qc_se(bam, mito_chr_name, mem_gb, out_dir):
-    prefix = os.path.join(out_dir,
-                          os.path.basename(strip_ext_bam(bam)))
-    # strip extension appended in the previous step
+    prefix = os.path.join(out_dir, os.path.basename(strip_ext_bam(bam)))
     prefix = strip_ext(prefix, 'dupmark')
     pbc_qc = '{}.lib_complexity.qc'.format(prefix)
 
+    # Run a series of shell commands to calculate PBC QC
     run_shell_cmd(
-        'bedtools bamtobed -i {bam} | '
-        'awk \'BEGIN{{OFS="\\t"}}{{print $1,$2,$3,$6}}\' | '
-        'grep -v "^{mito_chr_name}\\s" | sort {sort_param} | uniq -c | '
-        'awk \'BEGIN{{mt=0;m0=0;m1=0;m2=0}} ($1==1){{m1=m1+1}} '
-        '($1==2){{m2=m2+1}} {{m0=m0+1}} '
-        '{{mt=mt+$1}} END{{m1_m2=-1.0; '
-        'if(m2>0) m1_m2=m1/m2; m0_mt=0; '
-        'if (mt>0) m0_mt=m0/mt; m1_m0=0; if (m0>0) m1_m0=m1/m0; '
-        'printf "%d\\t%d\\t%d\\t%d\\t%f\\t%f\\t%f\\n",'
-        'mt,m0,m1,m2,m0_mt,m1_m0,m1_m2}}\' > {pbc_qc}'.format(
+        'bedtools genomecov -ibam {bam} -g {chrsz} | '
+        'grep -v "^{mito_chr_name}" > {pbc_qc}'.format(
             bam=bam,
+            chrsz=chrsz,
             mito_chr_name=mito_chr_name,
-            sort_param=get_gnu_sort_param(mem_gb * 1024 ** 3, ratio=0.5),
             pbc_qc=pbc_qc,
         )
     )
     return pbc_qc
 
-
-def pbc_qc_pe(bam, mito_chr_name, nth, mem_gb, out_dir):
-    prefix = os.path.join(out_dir,
-                          os.path.basename(strip_ext_bam(bam)))
-    pbc_qc = '{}.lib_complexity.qc'.format(prefix)
-
-    nmsrt_bam = samtools_name_sort(bam, nth, mem_gb, out_dir)
-
-    run_shell_cmd(
-        'bedtools bamtobed -bedpe -i {nmsrt_bam} | '
-        'awk \'BEGIN{{OFS="\\t"}}{{print $1,$2,$4,$6,$9,$10}}\' | '
-        'grep -v "^{mito_chr_name}\\s" | sort {sort_param} | uniq -c | '
-        'awk \'BEGIN{{mt=0;m0=0;m1=0;m2=0}} ($1==1){{m1=m1+1}} '
-        '($1==2){{m2=m2+1}} {{m0=m0+1}} {{mt=mt+$1}} END{{m1_m2=-1.0; '
-        'if(m2>0) m1_m2=m1/m2; m0_mt=0; '
-        'if (mt>0) m0_mt=m0/mt; m1_m0=0; if (m0>0) m1_m0=m1/m0; '
-        'printf "%d\\t%d\\t%d\\t%d\\t%f\\t%f\\t%f\\n"'
-        ',mt,m0,m1,m2,m0_mt,m1_m0,m1_m2}}\' > {pbc_qc}'.format(
-            nmsrt_bam=nmsrt_bam,
-            mito_chr_name=mito_chr_name,
-            sort_param=get_gnu_sort_param(mem_gb * 1024 ** 3, ratio=0.5),
-            pbc_qc=pbc_qc,
-        )
-    )
-    rm_f(nmsrt_bam)
-    return pbc_qc
 
 
 def main():
