@@ -9,7 +9,7 @@ The src folder contains python files used in the workflow
 
 ## Steps
 Take in fasta or fastq file and convert it to a tsv using final_genome_builder.sh
-** Configure the atac_input.json file to take in the desired sequence
+* Configure the atac_input.json file to take in the desired sequence
 Run the atac.wdl file using atac_input.json as the input
 
 ## Workflow 
