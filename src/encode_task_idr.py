@@ -1,74 +1,84 @@
 #!/usr/bin/env python
 
-
+# Import required libraries
 import sys
 import os
 import argparse
 import math
+
+# Import shared ENCODE utility functions
 from encode_lib_common import (
-    assert_file_not_empty,
-    log,
-    ls_l,
-    mkdir_p,
-    rm_f,
-    run_shell_cmd,
-    get_gnu_sort_param,
+    assert_file_not_empty,  # Ensure output file is not empty
+    log,                    # Logger setup
+    ls_l,                   # List files in a directory
+    mkdir_p,                # Make output directory
+    rm_f,                   # Remove temporary file(s)
+    run_shell_cmd,          # Execute shell commands
+    get_gnu_sort_param      # Compute memory setting for GNU sort
 )
+
+# Import genomic-specific ENCODE utilities
 from encode_lib_genomic import (
-    peak_to_bigbed,
-    peak_to_hammock,
-    bed_clip,
-    peak_to_starch,
+    peak_to_bigbed,         # Convert peak file to bigBed format
+    peak_to_hammock,        # Convert peak file to Hammock format
+    bed_clip,               # Clip peak coordinates to chromosome bounds
+    peak_to_starch          # Convert peak file to Starch format
 )
-from encode_lib_blacklist_filter import blacklist_filter
-from encode_lib_frip import frip, frip_shifted
+
+# Import additional ENCODE functions
+from encode_lib_blacklist_filter import blacklist_filter  # Blacklist filtering
+from encode_lib_frip import frip, frip_shifted            # FRiP score calculations
 
 
 def parse_arguments():
+    """
+    Parse command-line arguments using argparse.
+    """
     parser = argparse.ArgumentParser(
         prog='ENCODE DCC IDR.',
-        description='NarrowPeak or RegionPeak only.')
-    parser.add_argument('peak1', type=str,
-                        help='Peak file 1.')
-    parser.add_argument('peak2', type=str,
-                        help='Peak file 2.')
-    parser.add_argument('peak_pooled', type=str,
-                        help='Pooled peak file.')
-    parser.add_argument('--prefix', default='idr', type=str,
-                        help='Prefix basename for output IDR peak.')
+        description='Run IDR on narrowPeak or regionPeak files.'
+    )
+
+    # Required peak input files
+    parser.add_argument('peak1', type=str, help='Replicate 1 peak file.')
+    parser.add_argument('peak2', type=str, help='Replicate 2 peak file.')
+    parser.add_argument('peak_pooled', type=str, help='Pooled peak file.')
+
+    # Output prefix and peak type
+    parser.add_argument('--prefix', default='idr', type=str, help='Output file prefix.')
     parser.add_argument('--peak-type', type=str, required=True,
-                        choices=['narrowPeak', 'regionPeak',
-                                 'broadPeak', 'gappedPeak'],
-                        help='Peak file type.')
-    parser.add_argument('--idr-thresh', default=0.1, type=float,
-                        help='IDR threshold.')
+                        choices=['narrowPeak', 'regionPeak', 'broadPeak', 'gappedPeak'],
+                        help='Type of input peak files.')
+
+    # IDR configuration
+    parser.add_argument('--idr-thresh', default=0.1, type=float, help='IDR significance threshold.')
     parser.add_argument('--idr-rank', default='p.value', type=str,
                         choices=['p.value', 'q.value', 'signal.value'],
-                        help='IDR ranking method.')
-    parser.add_argument('--blacklist', type=str,
-                        help='Blacklist BED file.')
-    parser.add_argument('--regex-bfilt-peak-chr-name',
-                        help='Keep chromosomes matching this pattern only '
-                             'in .bfilt. peak files.')
-    parser.add_argument('--ta', type=str,
-                        help='TAGALIGN file for FRiP.')
-    parser.add_argument('--chrsz', type=str,
-                        help='2-col chromosome sizes file.')
+                        help='Column to rank peaks by.')
+
+    # Optional enhancements
+    parser.add_argument('--blacklist', type=str, help='BED file with blacklisted regions.')
+    parser.add_argument('--regex-bfilt-peak-chr-name', help='Regex to filter chromosomes in peak files.')
+
+    # FRiP score inputs
+    parser.add_argument('--ta', type=str, help='TAGALIGN file for FRiP calculation.')
+    parser.add_argument('--chrsz', type=str, help='Chromosome sizes file.')
     parser.add_argument('--fraglen', type=int, default=0,
-                        help='Fragment length for TAGALIGN file. \
-                        If given, do shifted FRiP (for ChIP-Seq).')
+                        help='Fragment length for shifted FRiP (used in ChIP-seq).')
+
+    # Memory configuration
     parser.add_argument('--mem-gb', type=float, default=4.0,
-                        help='Max. memory for this job in GB. '
-                        'This will be used to determine GNU sort -S (defaulting to 0.5 of this value). '
-                        'It should be total memory for this task (not memory per thread).')
-    parser.add_argument('--out-dir', default='', type=str,
-                        help='Output directory.')
+                        help='Max memory for GNU sort (used for peak sorting).')
+
+    # Output and logging
+    parser.add_argument('--out-dir', default='', type=str, help='Output directory.')
     parser.add_argument('--log-level', default='INFO',
-                        choices=['NOTSET', 'DEBUG', 'INFO',
-                                 'WARNING', 'CRITICAL', 'ERROR',
-                                 'CRITICAL'],
-                        help='Log level')
+                        choices=['NOTSET', 'DEBUG', 'INFO', 'WARNING', 'CRITICAL', 'ERROR'],
+                        help='Logging verbosity.')
+
     args = parser.parse_args()
+
+    # If blacklist file is not provided or set as 'null', ignore it
     if args.blacklist is None or args.blacklist.endswith('null'):
         args.blacklist = ''
 
@@ -78,6 +88,9 @@ def parse_arguments():
 
 
 def get_npeak_col_by_rank(rank):
+    """
+    Return column index for ranking based on IDR ranking metric.
+    """
     if rank == 'signal.value':
         return 7
     elif rank == 'p.value':
@@ -87,85 +100,69 @@ def get_npeak_col_by_rank(rank):
     else:
         raise Exception('Invalid score ranking method')
 
-# only for narrowPeak (or regionPeak) type
-
 
 def idr(basename_prefix, peak1, peak2, peak_pooled, peak_type, chrsz,
         thresh, rank, mem_gb, out_dir):
+    """
+    Main IDR pipeline using IDR framework and peak refinement.
+    """
+    # Construct all output filenames
     prefix = os.path.join(out_dir, basename_prefix)
-    prefix += '.idr{}'.format(thresh)
-    idr_peak = '{}.{}.gz'.format(prefix, peak_type)
-    idr_plot = '{}.unthresholded-peaks.txt.png'.format(prefix)
-    idr_stdout = '{}.log'.format(prefix)
-    # temporary
-    idr_12col_bed = '{}.12-col.bed.gz'.format(peak_type)
-    idr_out = '{}.unthresholded-peaks.txt'.format(prefix)
-    idr_tmp = '{}.unthresholded-peaks.txt.tmp'.format(prefix)
-    idr_out_gz = '{}.unthresholded-peaks.txt.gz'.format(prefix)
+    prefix += f'.idr{thresh}'
+    idr_peak = f'{prefix}.{peak_type}.gz'
+    idr_plot = f'{prefix}.unthresholded-peaks.txt.png'
+    idr_stdout = f'{prefix}.log'
+    idr_12col_bed = f'{peak_type}.12-col.bed.gz'
+    idr_out = f'{prefix}.unthresholded-peaks.txt'
+    idr_tmp = f'{idr_out}.tmp'
+    idr_out_gz = f'{idr_out}.gz'
 
+    # Run the IDR tool
     run_shell_cmd(
-        'idr --samples {peak1} {peak2} --peak-list {peak_pooled} --input-file-type narrowPeak '
-        '--output-file {idr_out} --rank {rank} --soft-idr-threshold {thresh} '
-        '--plot --use-best-multisummit-IDR --log-output-file {idr_stdout}'.format(
-            peak1=peak1,
-            peak2=peak2,
-            peak_pooled=peak_pooled,
-            idr_out=idr_out,
-            rank=rank,
-            thresh=thresh,
-            idr_stdout=idr_stdout,
-        )
+        f'idr --samples {peak1} {peak2} --peak-list {peak_pooled} --input-file-type narrowPeak '
+        f'--output-file {idr_out} --rank {rank} --soft-idr-threshold {thresh} '
+        f'--plot --use-best-multisummit-IDR --log-output-file {idr_stdout}'
     )
 
-    # clip peaks between 0-chromSize.
+    # Clip peak coordinates that exceed chromosome sizes
     bed_clip(idr_out, chrsz, idr_tmp, no_gz=True)
 
+    # Filter peaks above IDR threshold and sort
     col = get_npeak_col_by_rank(rank)
     neg_log10_thresh = -math.log10(thresh)
-    # LC_COLLATE=C
     run_shell_cmd(
-        'awk \'BEGIN{{OFS="\\t"}} $12>={neg_log10_thresh} '
-        '{{if ($2<0) $2=0; '
-        'print $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12}}\' {idr_tmp} '
-        '| sort {sort_param} | uniq | sort -grk{col},{col} {sort_param} | gzip -nc > {idr_12col_bed}'.format(
-            neg_log10_thresh=neg_log10_thresh,
-            idr_tmp=idr_tmp,
-            sort_param=get_gnu_sort_param(mem_gb * 1024 ** 3, ratio=0.5),
-            col=col,
-            idr_12col_bed=idr_12col_bed,
-        )
+        f"awk 'BEGIN{{OFS=\"\\t\"}} $12>={neg_log10_thresh} "
+        f"{{if ($2<0) $2=0; print $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12}}' {idr_tmp} | "
+        f"sort {get_gnu_sort_param(mem_gb * 1024**3, ratio=0.5)} | uniq | "
+        f"sort -grk{col},{col} {get_gnu_sort_param(mem_gb * 1024**3, ratio=0.5)} | "
+        f"gzip -nc > {idr_12col_bed}"
     )
 
+    # Keep only first 10 columns (standard BED format)
     run_shell_cmd(
-        'zcat {idr_12col_bed} | '
-        'awk \'BEGIN{{OFS="\\t"}} '
-        '{{print $1,$2,$3,$4,$5,$6,$7,$8,$9,$10}}\' | '
-        'gzip -nc > {idr_peak}'.format(
-            idr_12col_bed=idr_12col_bed,
-            idr_peak=idr_peak,
-        )
+        f'zcat {idr_12col_bed} | '
+        f'awk \'BEGIN{{OFS="\\t"}} {{print $1,$2,$3,$4,$5,$6,$7,$8,$9,$10}}\' | '
+        f'gzip -nc > {idr_peak}'
     )
 
-    run_shell_cmd(
-        'cat {idr_tmp} | gzip -nc > {idr_out_gz}'.format(
-            idr_tmp=idr_tmp,
-            idr_out_gz=idr_out_gz,
-        )
-    )
+    # Compress the unthresholded full IDR output
+    run_shell_cmd(f'cat {idr_tmp} | gzip -nc > {idr_out_gz}')
 
+    # Clean up temporary files
     rm_f([idr_out, idr_tmp, idr_12col_bed])
-    rm_f('{prefix}.*.noalternatesummitpeaks.png'.format(prefix=prefix))
+    rm_f(f'{prefix}.*.noalternatesummitpeaks.png')
+
     return idr_peak, idr_plot, idr_out_gz, idr_stdout
 
 
 def main():
-    # read params
+    # Parse arguments and initialize
     args = parse_arguments()
-
     log.info('Initializing and making output directory...')
     mkdir_p(args.out_dir)
 
-    log.info('Do IDR...')
+    # Run IDR and generate filtered peaks
+    log.info('Running IDR...')
     idr_peak, idr_plot, idr_out_gz, idr_stdout = idr(
         args.prefix,
         args.peak1, args.peak2, args.peak_pooled, args.peak_type,
@@ -173,39 +170,46 @@ def main():
         args.idr_thresh, args.idr_rank, args.mem_gb, args.out_dir,
     )
 
+    # Check that resulting IDR peak file is not empty
     log.info('Checking if output is empty...')
-    assert_file_not_empty(idr_peak, help=
+    assert_file_not_empty(idr_peak, help=(
         'No IDR peaks found. IDR threshold might be too stringent '
         'or replicates have very poor concordance.')
+    )
 
+    # Filter out blacklisted regions from the IDR peaks
     log.info('Blacklist-filtering peaks...')
     bfilt_idr_peak = blacklist_filter(
         idr_peak, args.blacklist, args.regex_bfilt_peak_chr_name, args.out_dir)
 
-    log.info('Converting peak to bigbed...')
+    # Generate different formats for downstream use
+    log.info('Converting peak to bigBed...')
     peak_to_bigbed(bfilt_idr_peak, args.peak_type, args.chrsz,
                    args.mem_gb, args.out_dir)
 
-    log.info('Converting peak to starch...')
+    log.info('Converting peak to Starch...')
     peak_to_starch(bfilt_idr_peak, args.out_dir)
 
-    log.info('Converting peak to hammock...')
+    log.info('Converting peak to Hammock...')
     peak_to_hammock(bfilt_idr_peak, args.mem_gb, args.out_dir)
 
-    if args.ta:  # if TAG-ALIGN is given
-        if args.fraglen:  # chip-seq
-            log.info('Shifted FRiP with fragment length...')
+    # Optional: Calculate FRiP scores if tagAlign file is available
+    if args.ta:
+        if args.fraglen:
+            log.info('Running shifted FRiP (ChIP-seq)...')
             frip_shifted(args.ta, bfilt_idr_peak,
                          args.chrsz, args.fraglen, args.out_dir)
-        else:  # atac-seq
-            log.info('FRiP without fragment length...')
+        else:
+            log.info('Running unshifted FRiP (ATAC-seq)...')
             frip(args.ta, bfilt_idr_peak, args.out_dir)
 
-    log.info('List all files in output directory...')
+    # Final report of output directory
+    log.info('Listing all files in output directory...')
     ls_l(args.out_dir)
 
     log.info('All done.')
 
 
+# Entrypoint
 if __name__ == '__main__':
     main()
