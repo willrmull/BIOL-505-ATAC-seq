@@ -9,7 +9,7 @@ The src folder contains python files used in the workflow
 
 ## Steps
 * Install conda and activate conda environment from the scripts folder
-* Convert fasta or fastq file to a tsv using final_genome_builder.sh
+* Convert fasta or fastq file to a tsv using final_genome_builder.sh, use an environment with samtools and bowtie2
 * Configure the atac_input.json file to take in the tsv
 * Run the atac.wdl file using atac_input.json as the input
 
