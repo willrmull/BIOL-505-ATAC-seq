@@ -2,15 +2,15 @@
 # ATAC seq pipeline based off code from ENCODES atac-seq-pipeline
 
 # Scripts
-#-The scripts folder contains .sh files used for installing the conda environent for the project and converting the genome file to a tsv
+The scripts folder contains .sh files used for installing the conda environent for the project and converting the genome file to a tsv
 
 # src
-#-The src folder contains python files used in the workflow
+The src folder contains python files used in the workflow
 
 ## Steps
-#-Take in fasta or fastq file and convert it to a tsv using final_genome_builder.sh
-#-Configure the atac_input.json file to take in the desired sequence
-#-Run the atac.wdl file using atac_input.json as the input
+Take in fasta or fastq file and convert it to a tsv using final_genome_builder.sh
+Configure the atac_input.json file to take in the desired sequence
+Run the atac.wdl file using atac_input.json as the input
 
 ## Workflow 
 
