@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
 
+# must run in an environment with samtools and bowtie2
 #give user instructions for how to input arguments if they don't input the correct number
 if [[ "$#" -lt 2 ]]; then
   echo "Usage: ./build_genome_data.sh [GENOME] [DEST_DIR]"
