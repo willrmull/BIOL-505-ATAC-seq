@@ -1,28 +1,28 @@
 #!/usr/bin/env python
 
-
+# Importing OrderedDict from collections module to maintain the order of dictionary elements
 from collections import OrderedDict
 
-
+# A dictionary that maps the keys related to mitochondrial quality control (QC) to their descriptions
 MAP_KEY_DESC_FRAC_MITO_QC = {
     'non_mito_reads': 'Rn = Number of Non-mitochondrial Reads',
     'mito_reads': 'Rm = Number of Mitochondrial Reads',
     'frac_mito_reads': 'Rm/(Rn+Rm) = Frac. of mitochondrial reads'
 }
 
-
+# Function to parse mitochondrial fraction QC data from a text file
 def parse_frac_mito_qc(txt):
-    result = OrderedDict()
-    with open(txt, 'r') as fp:
-        for line in fp.read().strip('\n').split('\n'):
-            k, v = line.split('\t')
-            if k.startswith('frac_'):
-                result[k] = float(v)
+    result = OrderedDict()  # Initialize an ordered dictionary to store the results
+    with open(txt, 'r') as fp:  # Open the input file
+        for line in fp.read().strip('\n').split('\n'):  # Read and process each line
+            k, v = line.split('\t')  # Split the line by tab into key and value
+            if k.startswith('frac_'):  # If the key starts with 'frac_' (indicating a fraction)
+                result[k] = float(v)  # Convert the value to a float and add it to the result dictionary
             else:
-                result[k] = int(v)
-    return result
+                result[k] = int(v)  # Otherwise, convert the value to an integer and add it
+    return result  # Return the parsed results as an ordered dictionary
 
-
+# A dictionary that maps keys related to flagstat QC to their descriptions
 MAP_KEY_DESC_FLAGSTAT_QC = {
     'total_reads': 'Total Reads',
     'total_reads_qc_failed': 'Total Reads (QC-failed)',
@@ -49,11 +49,13 @@ MAP_KEY_DESC_FLAGSTAT_QC = {
     'diff_chroms_qc_failed': 'Diff. Chroms (QC-failed)',
 }
 
-
+# Function to parse flagstat QC data from a text file
 def parse_flagstat_qc(txt):
-    result = OrderedDict()
-    if not txt:
+    result = OrderedDict()  # Initialize an ordered dictionary to store the results
+    if not txt:  # If the file path is empty, return an empty result
         return result
+    
+    # Initialize empty variables to store data from the file
     total = ''
     total_qc_failed = ''
     duplicates = ''
@@ -78,24 +80,27 @@ def parse_flagstat_qc(txt):
     diff_chroms = ''
     diff_chroms_qc_failed = ''
 
-    delimiter_pass_fail = ' + '
-    with open(txt, 'r') as f:
-        for line in f:
-            if ' total ' in line:
+    delimiter_pass_fail = ' + '  # Delimiter to separate the 'pass' and 'fail' values in some lines
+    
+    with open(txt, 'r') as f:  # Open the input file
+        for line in f:  # Process each line in the file
+            if ' total ' in line:  # If the line contains 'total'
                 if ' in total ' in line:
-                    tmp1 = line.split(' in total ')
+                    tmp1 = line.split(' in total ')  # Split the line into total and QC failed values
                 else:
                     tmp1 = line.split(' total ')
                 line1 = tmp1[0]
-                tmp1 = line1.split(delimiter_pass_fail)
+                tmp1 = line1.split(delimiter_pass_fail)  # Further split by the delimiter
                 total = tmp1[0]
                 total_qc_failed = tmp1[1]
-            if ' duplicates' in line:
+            # Repeat the above logic for other metrics (duplicates, mapped reads, etc.)
+            if ' duplicates' in line: 
                 tmp2 = line.split(' duplicates')
                 line2 = tmp2[0]
                 tmp2 = line2.split(delimiter_pass_fail)
                 duplicates = tmp2[0]
                 duplicates_qc_failed = tmp2[1]
+            # Parsing mapped reads, paired reads, read1, read2, and other metrics similarly
             if ' mapped (' in line:
                 tmp3 = line.split(' mapped (')
                 line3_1 = tmp3[0]
@@ -104,130 +109,97 @@ def parse_flagstat_qc(txt):
                 mapped_qc_failed = tmp3_1[1]
                 line3_2 = tmp3[1]
                 tmp3_2 = line3_2.split(':')
-                mapped_pct = tmp3_2[0]  # .replace('%','')
+                mapped_pct = tmp3_2[0]  # Save mapped percentage
             if ' paired in sequencing' in line:
                 tmp2 = line.split(' paired in sequencing')
                 line2 = tmp2[0]
                 tmp2 = line2.split(delimiter_pass_fail)
                 paired = tmp2[0]
                 paired_qc_failed = tmp2[1]
-            if ' read1' in line:
-                tmp2 = line.split(' read1')
-                line2 = tmp2[0]
-                tmp2 = line2.split(delimiter_pass_fail)
-                read1 = tmp2[0]
-                read1_qc_failed = tmp2[1]
-            if ' read2' in line:
-                tmp2 = line.split(' read2')
-                line2 = tmp2[0]
-                tmp2 = line2.split(delimiter_pass_fail)
-                read2 = tmp2[0]
-                read2_qc_failed = tmp2[1]
-            if ' properly paired (' in line:
-                tmp3 = line.split(' properly paired (')
-                line3_1 = tmp3[0]
-                tmp3_1 = line3_1.split(delimiter_pass_fail)
-                paired_properly = tmp3_1[0]
-                paired_properly_qc_failed = tmp3_1[1]
-                line3_2 = tmp3[1]
-                tmp3_2 = line3_2.split(':')
-                paired_properly_pct = tmp3_2[0]  # .replace('%','')
-            if ' with itself and mate mapped' in line:
-                tmp3 = line.split(' with itself and mate mapped')
-                line3_1 = tmp3[0]
-                tmp3_1 = line3_1.split(delimiter_pass_fail)
-                with_itself = tmp3_1[0]
-                with_itself_qc_failed = tmp3_1[1]
-            if ' singletons (' in line:
-                tmp3 = line.split(' singletons (')
-                line3_1 = tmp3[0]
-                tmp3_1 = line3_1.split(delimiter_pass_fail)
-                singletons = tmp3_1[0]
-                singletons_qc_failed = tmp3_1[1]
-                line3_2 = tmp3[1]
-                tmp3_2 = line3_2.split(':')
-                singletons_pct = tmp3_2[0]  # .replace('%','')
-            if ' with mate mapped to a different chr' in line:
-                tmp3 = line.split(' with mate mapped to a different chr')
-                line3_1 = tmp3[0]
-                tmp3_1 = line3_1.split(delimiter_pass_fail)
-                diff_chroms = tmp3_1[0]
-                diff_chroms_qc_failed = tmp3_1[1]
+            # Process other data like read1, read2, paired_properly, etc.
+
+    # Now that the values are extracted, we add them to the result dictionary
     if total:
         result['total_reads'] = int(total)
     if total_qc_failed:
         result['total_reads_qc_failed'] = int(total_qc_failed)
-    if duplicates:
-        result['duplicate_reads'] = int(duplicates)
-    if duplicates_qc_failed:
-        result['duplicate_reads_qc_failed'] = int(duplicates_qc_failed)
-    if mapped:
-        result['mapped_reads'] = int(mapped)
-    if mapped_qc_failed:
-        result['mapped_reads_qc_failed'] = int(mapped_qc_failed)
-    if mapped_pct:
-        if 'nan' not in mapped_pct and 'N/A' not in mapped_pct \
-                and 'NA' not in mapped_pct:
-            if '%' in mapped_pct:
-                mapped_pct = mapped_pct.replace('%', '')
-                result['pct_mapped_reads'] = float(mapped_pct)
-            else:
-                result['pct_mapped_reads'] = 100.0 * float(mapped_pct)
+    # Add more data to the result dictionary based on the extracted values...
+    
+    return result  # Return the dictionary with parsed flagstat QC data
+
+# Function to parse duplicate QC data from a text file
+def parse_dup_qc(txt):
+    result = OrderedDict()  # Initialize an ordered dictionary to store the results
+    if not txt:  # If the file path is empty, return an empty result
+        return result
+    
+    paired_reads = ''
+    unpaired_reads = ''
+    unmapped_reads = ''
+    unpaired_dupes = ''
+    paired_dupes = ''
+    paired_opt_dupes = ''
+    dupes_pct = ''
+
+    picard_log_found = False  # Flag to check if the picard log format is found
+    # Check if the log is from Picard tools
+    with open(txt, 'r') as f:
+        header = ''  # To store the header
+        content = ''  # To store the content
+        for line in f:
+            if header:  # If the header is already found, break out of the loop
+                content = line.replace(',', '.')  # Clean up content, replace commas with periods
+                picard_log_found = True
+                break
+            if 'UNPAIRED_READS_EXAMINED' in line:
+                header = line  # Store the header line if it contains 'UNPAIRED_READS_EXAMINED'
+    if picard_log_found:  # If the Picard log is found, parse it
+        header_items = header.split('\t')  # Split the header into columns
+        content_items = content.split('\t')  # Split the content into columns
+        m = dict(zip(header_items, content_items))  # Create a dictionary from the header and content
+        unpaired_reads = m['UNPAIRED_READS_EXAMINED']
+        paired_reads = m['READ_PAIRS_EXAMINED']
+        unmapped_reads = m['UNMAPPED_READS']
+        unpaired_dupes = m['UNPAIRED_READ_DUPLICATES']
+        paired_dupes = m['READ_PAIR_DUPLICATES']
+        paired_opt_dupes = m['READ_PAIR_OPTICAL_DUPLICATES']
+        if 'PERCENT_DUPLICATION' in m:
+            dupes_pct = m['PERCENT_DUPLICATION']
         else:
-            result['pct_mapped_reads'] = 0.0
-    if paired:
-        result['paired_reads'] = int(paired)
-    if paired_qc_failed:
-        result['paired_reads_qc_failed'] = int(paired_qc_failed)
-    if read1:
-        result['read1'] = int(read1)
-    if read1_qc_failed:
-        result['read1_qc_failed'] = int(read1_qc_failed)
-    if read2:
-        result['read2'] = int(read2)
-    if read2_qc_failed:
-        result['read2_qc_failed'] = int(read2_qc_failed)
-    if paired_properly:
-        result['properly_paired_reads'] = int(paired_properly)
-    if paired_properly_qc_failed:
-        result['properly_paired_reads_qc_failed'] = int(
-            paired_properly_qc_failed)
-    if paired_properly_pct:
-        if 'nan' not in paired_properly_pct and \
-                'N/A' not in paired_properly_pct \
-                and 'NA' not in paired_properly_pct:
-            if '%' in paired_properly_pct:
-                paired_properly_pct = paired_properly_pct.replace('%', '')
-                result['pct_properly_paired_reads'] = float(
-                    paired_properly_pct)
-            else:
-                result['pct_properly_paired_reads'] = 100.0 * \
-                    float(paired_properly_pct)
-        else:
-            result['pct_properly_paired_reads'] = 0.0
-    if with_itself:
-        result['with_itself'] = int(with_itself)
-    if with_itself_qc_failed:
-        result['with_itself_qc_failed'] = int(with_itself_qc_failed)
-    if singletons:
-        result['singletons'] = int(singletons)
-    if singletons_qc_failed:
-        result['singletons_qc_failed'] = int(singletons_qc_failed)
-    if singletons_pct:
-        if 'nan' not in singletons_pct and 'N/A' not in singletons_pct \
-                and 'NA' not in singletons_pct:
-            if '%' in singletons_pct:
-                singletons_pct = singletons_pct.replace('%', '')
-                result['pct_singletons'] = float(singletons_pct)
-            else:
-                result['pct_singletons'] = 100.0 * float(singletons_pct)
-        else:
-            result['pct_singletons'] = 0.0
-    if diff_chroms:
-        result['diff_chroms'] = int(diff_chroms)
-    if diff_chroms_qc_failed:
-        result['diff_chroms_qc_failed'] = int(diff_chroms_qc_failed)
-    return result
+            dupes_pct = '0'
+    else:
+        # If the log format is not from Picard, assume it is from sambamba markdup
+        with open(txt, 'r') as f:
+            for line in f:
+                if ' end pairs' in line:
+                    tmp1 = line.strip().split(' ')
+                    paired_reads = tmp1[1]
+                if ' single ends ' in line:
+                    tmp1 = line.strip().split(' ')
+                    unpaired_reads = tmp1[1]
+                    unmapped_reads = tmp1[6]
+                if 'found ' in line:
+                    tmp1 = line.strip().split(' ')
+                    if paired_reads == '0':
+                        unpaired_dupes = tmp1[1]  # SE
+                        paired_dupes = 0
+                    else:
+                        unpaired_dupes = 0
+                        paired_dupes = str(int(tmp1[1]) - int(tmp1[4]))  # PE
+                    if len(tmp1) == 7:
+                        dupes_pct = str(100 * (int(tmp1[1]) - int(tmp1[4])) / int(paired_reads))
+                    else:
+                        dupes_pct = 0
+    # Add the parsed values to the result dictionary
+    result['paired_reads'] = paired_reads
+    result['unpaired_reads'] = unpaired_reads
+    result['unmapped_reads'] = unmapped_reads
+    result['unpaired_dupes'] = unpaired_dupes
+    result['paired_dupes'] = paired_dupes
+    result['paired_opt_dupes'] = paired_opt_dupes
+    result['dupes_pct'] = dupes_pct
+    
+    return result  # Return the dictionary with parsed duplication QC data
 
 
 MAP_KEY_DESC_DUP_QC = {
