@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-# ENCODE DCC Count signal track generation
-# Author: Jin Lee (leepc12@gmail.com)
 
 import sys
 import os
