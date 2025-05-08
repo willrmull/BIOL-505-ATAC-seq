@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-# ENCODE DCC pseudo replicator wrapper
-# Author: Jin Lee (leepc12@gmail.com)
 
 import sys
 import os
