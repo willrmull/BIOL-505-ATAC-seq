@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-
+# Import necessary libraries and modules
 import sys
 import os
 import argparse
@@ -15,52 +15,88 @@ from encode_lib_genomic import (
 
 
 def parse_arguments():
+    """Parse command-line arguments."""
+    # Initialize argument parser
     parser = argparse.ArgumentParser(
         prog='ENCODE DCC MACS2 callpeak')
+    
+    # Add positional argument for the TAGALIGN file (first) and control TAGALIGN file (second, optional)
     parser.add_argument(
         'tas', type=str, nargs='+',
         help='Path for TAGALIGN file (first) and '
              'control TAGALIGN file (second; optional).')
+    
+    # Add argument for fragment length (required)
     parser.add_argument('--fraglen', type=int, required=True,
                         help='Fragment length.')
+    
+    # Add optional argument for shift size in macs2 callpeak
     parser.add_argument('--shift', type=int, default=0,
                         help='macs2 callpeak --shift.')
+    
+    # Add optional argument for chromosome size file (used for peak clipping)
     parser.add_argument('--chrsz', type=str,
                         help='2-col chromosome sizes file.')
+    
+    # Add optional argument for genome size (either total chromosome sizes or specific abbreviations)
     parser.add_argument('--gensz', type=str,
-                        help='Genome size (sum of entries in 2nd column of \
-                            chr. sizes file, or hs for human, ms for mouse).')
+                        help='Genome size (sum of entries in 2nd column of chr. sizes file, or hs for human, ms for mouse).')
+    
+    # Add argument for p-value threshold (default is 0.01)
     parser.add_argument('--pval-thresh', default=0.01, type=float,
                         help='P-Value threshold.')
+    
+    # Add argument for capping the number of peaks (default is 500000)
     parser.add_argument('--cap-num-peak', default=500000, type=int,
                         help='Capping number of peaks by taking top N peaks.')
+    
+    # Add optional argument for subsampling control file to a specific read depth
     parser.add_argument('--ctl-subsample', default=0, type=int,
-                        help='Subsample control to this read depth '
-                             '(0: no subsampling).')
+                        help='Subsample control to this read depth (0: no subsampling).')
+    
+    # Add argument to specify if the control TAGALIGN file is paired-end
     parser.add_argument('--ctl-paired-end', action="store_true",
                         help='Paired-end control TA.')
+    
+    # Add argument for specifying max memory for the job (used to set sort memory)
     parser.add_argument('--mem-gb', type=float, default=4.0,
                         help='Max. memory for this job in GB. '
-                        'This will be used to determine GNU sort -S (defaulting to 0.5 of this value). '
-                        'It should be total memory for this task (not memory per thread).')
+                             'This will be used to determine GNU sort -S (defaulting to 0.5 of this value). '
+                             'It should be total memory for this task (not memory per thread).')
+    
+    # Add optional argument for specifying the output directory
     parser.add_argument('--out-dir', default='', type=str,
                         help='Output directory.')
+    
+    # Add argument for setting log level (e.g., INFO, DEBUG)
     parser.add_argument('--log-level', default='INFO',
                         choices=['NOTSET', 'DEBUG', 'INFO',
                                  'WARNING', 'CRITICAL', 'ERROR',
                                  'CRITICAL'],
                         help='Log level')
+    
+    # Parse the arguments and return the parsed arguments object
     args = parser.parse_args()
+    
+    # If only one TAGALIGN file is provided, append an empty string for the control file
     if len(args.tas) == 1:
         args.tas.append('')
+    
+    # Set logging level based on the user's choice
     log.setLevel(args.log_level)
-    log.info(sys.argv)
+    log.info(sys.argv)  # Log the command used to run the script
+    
     return args
 
 
 def macs2(ta, ctl_ta, chrsz, gensz, pval_thresh, shift, fraglen, cap_num_peak,
           ctl_subsample, ctl_paired_end, mem_gb, out_dir):
+    """Run MACS2 peak calling, sort peaks, and clip peaks to genome size."""
+    
+    # Extract the base name of the TAGALIGN file (excluding extension)
     basename_ta = os.path.basename(strip_ext_ta(ta))
+    
+    # If control TAGALIGN file is provided, handle subsampling if specified
     if ctl_ta:
         if ctl_subsample:
             if ctl_paired_end:
@@ -74,21 +110,33 @@ def macs2(ta, ctl_ta, chrsz, gensz, pval_thresh, shift, fraglen, cap_num_peak,
                     non_mito=False, mito_chr_name=None,
                     out_dir=out_dir)
 
+        # Set the base name for control TAGALIGN file
         basename_ctl_ta = os.path.basename(strip_ext_ta(ctl_ta))
+        # Combine both experiment and control base names for a unique prefix
         basename_prefix = '{}_x_{}'.format(basename_ta, basename_ctl_ta)
-        if len(basename_prefix) > 200:  # UNIX cannot have len(filename) > 255
+        
+        # If prefix exceeds 200 characters, truncate to avoid filesystem limits
+        if len(basename_prefix) > 200:
             basename_prefix = '{}_x_control'.format(basename_ta)
     else:
+        # If no control file is provided, just use the experiment base name
         basename_prefix = basename_ta
+    
+    # Define output prefix for all resulting files
     prefix = os.path.join(out_dir, basename_prefix)
+    
+    # Set the file names for the narrowPeak result and temporary files
     npeak = '{}.{}.{}.narrowPeak.gz'.format(
         prefix,
         'pval{}'.format(pval_thresh),
         human_readable_number(cap_num_peak))
     npeak_tmp = '{}.tmp'.format(npeak)
-    npeak_tmp2 = '{}.tmp2'.format(npeak)
+    npeak_tmp2 = '{}.tmp2'.format(npeak_tmp)
+    
+    # Initialize a list to store temporary files for cleanup
     temp_files = []
 
+    # Run the MACS2 peak calling command
     run_shell_cmd(
         ' macs2 callpeak '
         '-t {ta} {ctl_param} -f BED -n {prefix} -g {gensz} -p {pval_thresh} '
@@ -103,6 +151,7 @@ def macs2(ta, ctl_ta, chrsz, gensz, pval_thresh, shift, fraglen, cap_num_peak,
         )
     )
 
+    # Sort the peaks by score in descending order and handle peak formatting
     run_shell_cmd(
         'LC_COLLATE=C sort -k 8gr,8gr {sort_param} "{prefix}_peaks.narrowPeak" | '
         'awk \'BEGIN{{OFS="\\t"}}'
@@ -114,6 +163,7 @@ def macs2(ta, ctl_ta, chrsz, gensz, pval_thresh, shift, fraglen, cap_num_peak,
         )
     )
 
+    # Limit the number of peaks to the specified cap
     run_shell_cmd(
         'head -n {cap_num_peak} {npeak_tmp} > {npeak_tmp2}'.format(
             cap_num_peak=cap_num_peak,
@@ -122,12 +172,13 @@ def macs2(ta, ctl_ta, chrsz, gensz, pval_thresh, shift, fraglen, cap_num_peak,
         )
     )
 
-    # clip peaks between 0-chromSize.
+    # Clip the peaks to the chromosome sizes to avoid out-of-bounds regions
     bed_clip(npeak_tmp2, chrsz, npeak)
 
+    # Remove temporary files created during processing
     rm_f([npeak_tmp, npeak_tmp2])
 
-    # remove temporary files
+    # Collect temporary files (e.g., the prefix-based files) for cleanup
     temp_files.append("{prefix}_*".format(prefix=prefix))
     rm_f(temp_files)
 
@@ -135,13 +186,19 @@ def macs2(ta, ctl_ta, chrsz, gensz, pval_thresh, shift, fraglen, cap_num_peak,
 
 
 def main():
-    # read params
+    """Main function to execute the MACS2 peak calling and processing."""
+    
+    # Parse command-line arguments
     args = parse_arguments()
 
+    # Log the initialization process and create the output directory if it doesn't exist
     log.info('Initializing and making output directory...')
     mkdir_p(args.out_dir)
 
+    # Log the peak calling process
     log.info('Calling peaks with macs2...')
+    
+    # Call the MACS2 function to perform peak calling and peak processing
     npeak = macs2(
         args.tas[0],
         args.tas[1],
@@ -157,14 +214,18 @@ def main():
         args.out_dir,
     )
 
+    # Log the output verification step to ensure the result file is not empty
     log.info('Checking if output is empty...')
     assert_file_not_empty(npeak)
 
+    # Log the listing of all files in the output directory
     log.info('List all files in output directory...')
     ls_l(args.out_dir)
 
+    # Log completion of the process
     log.info('All done.')
 
 
 if __name__ == '__main__':
+    # Execute the main function
     main()
