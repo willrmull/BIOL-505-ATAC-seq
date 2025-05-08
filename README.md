@@ -5,7 +5,7 @@
 #-The scripts folder contains .sh files used for installing the conda environent for the project and converting the genome file to a tsv
 
 # src
-#The src folder contains python files used in the workflow
+#-The src folder contains python files used in the workflow
 
 ## Steps
 #-Take in fasta or fastq file and convert it to a tsv using final_genome_builder.sh
