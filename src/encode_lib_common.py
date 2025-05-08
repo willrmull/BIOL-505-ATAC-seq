@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-
+# Imports
 import sys
 import os
 import re
@@ -12,65 +12,50 @@ import signal
 import time
 import argparse
 
+# Configure logging format and level
 logging.basicConfig(
     format='[%(asctime)s %(levelname)s] %(message)s',
     stream=sys.stdout)
 log = logging.getLogger(__name__)
 
-BIG_INT = 99999999
+BIG_INT = 99999999  # A very large integer for placeholder usage
 
-# string/system functions
+# ---------- Utility Functions ----------
+
 def get_ticks():
-    """Returns ticks.
-        - Python3: Use time.perf_counter().
-        - Python2: Use time.time().
-    """
+    """Return high-resolution current time in seconds for benchmarking."""
     return getattr(time, 'perf_counter', getattr(time, 'time'))()
 
+# ----------- File Extension Stripping Utilities -----------
 
-def strip_ext_fastq(fastq):
-    return re.sub(r'\.(fastq|fq|Fastq|Fq)\.gz$', '',
-                  str(fastq))
+# Strip common extensions from file names
+def strip_ext_fastq(fastq): return re.sub(r'\.(fastq|fq|Fastq|Fq)\.gz$', '', str(fastq))
+def strip_ext_bam(bam): return re.sub(r'\.(bam|Bam)$', '', str(bam))
+def strip_ext_tar(tar): return re.sub(r'\.(tar|tar\.gz)$', '', str(tar))
+def strip_ext_ta(ta): return re.sub(r'\.(tagAlign|TagAlign|ta|Ta)\.gz$', '', str(ta))
+def strip_ext_bed(bed): return re.sub(r'\.(bed|Bed)\.gz$', '', str(bed))
+def strip_ext_npeak(npeak): return re.sub(r'\.(narrowPeak|NarrowPeak)\.gz$', '', str(npeak))
+def strip_ext_rpeak(rpeak): return re.sub(r'\.(regionPeak|RegionPeak)\.gz$', '', str(rpeak))
+def strip_ext_gpeak(gpeak): return re.sub(r'\.(gappedPeak|GappedPeak)\.gz$', '', str(gpeak))
+def strip_ext_bpeak(bpeak): return re.sub(r'\.(broadPeak|BroadPeak)\.gz$', '', str(bpeak))
+def strip_ext_bigwig(bw): return re.sub(r'\.(bigwig|bw)$', '', str(bw))
+def strip_ext_gz(f): return re.sub(r'\.gz$', '', str(f))
 
+def get_ext(f):
+    """Return the extension of a file (ignoring .gz)."""
+    f_wo_gz = re.sub(r'\.gz$', '', str(f))
+    return f_wo_gz.split('.')[-1]
 
-def strip_ext_bam(bam):
-    return re.sub(r'\.(bam|Bam)$', '', str(bam))
+def strip_ext(f, ext=''):
+    """Remove file extension and optionally a .gz suffix."""
+    if ext == '':
+        ext = get_ext(f)
+    return re.sub(r'\.({}|{}\.gz)$'.format(ext, ext), '', str(f))
 
-
-def strip_ext_tar(tar):
-    return re.sub(r'\.(tar|tar\.gz)$', '', str(tar))
-
-
-def strip_ext_ta(ta):
-    return re.sub(r'\.(tagAlign|TagAlign|ta|Ta)\.gz$', '',
-                  str(ta))
-
-
-def strip_ext_bed(bed):
-    return re.sub(r'\.(bed|Bed)\.gz$', '', str(bed))
-
-
-def strip_ext_npeak(npeak):
-    return re.sub(r'\.(narrowPeak|NarrowPeak)\.gz$', '',
-                  str(npeak))
-
-
-def strip_ext_rpeak(rpeak):
-    return re.sub(r'\.(regionPeak|RegionPeak)\.gz$', '',
-                  str(rpeak))
-
-
-def strip_ext_gpeak(gpeak):
-    return re.sub(r'\.(gappedPeak|GappedPeak)\.gz$', '',
-                  str(gpeak))
-
-
-def strip_ext_bpeak(bpeak):
-    return re.sub(r'\.(broadPeak|BroadPeak)\.gz$', '',
-                  str(bpeak))
-
+# ----------- Peak Type Utilities -----------
 
 def get_peak_type(peak):
+    """Determine peak type based on its extension."""
     if strip_ext_npeak(peak) != peak:
         return 'narrowPeak'
     elif strip_ext_rpeak(peak) != peak:
@@ -80,318 +65,162 @@ def get_peak_type(peak):
     elif strip_ext_gpeak(peak) != peak:
         return 'gappedPeak'
     else:
-        raise Exception(
-            'Unsupported peak type for stripping extension {}'.format(peak))
+        raise Exception('Unsupported peak type for {}'.format(peak))
 
-
-def strip_ext_peak(peak):  # returns a tuple (peak_type, stripped_filename)
+def strip_ext_peak(peak):
+    """Return filename without extension for known peak types."""
     peak_type = get_peak_type(peak)
-    if peak_type == 'narrowPeak':
-        return strip_ext_npeak(peak)
-    elif peak_type == 'regionPeak':
-        return strip_ext_rpeak(peak)
-    elif peak_type == 'broadPeak':
-        return strip_ext_bpeak(peak)
-    elif peak_type == 'gappedPeak':
-        return strip_ext_gpeak(peak)
-    else:
-        raise Exception(
-            'Unsupported peak type for stripping '
-            'extension {}'.format(peak))
+    return strip_ext(peak, peak_type)
 
-
-def strip_ext_bigwig(bw):
-    return re.sub(r'\.(bigwig|bw)$', '',
-                  str(bw))
-
-
-def strip_ext_gz(f):
-    return re.sub(r'\.gz$', '', str(f))
-
-
-def strip_ext(f, ext=''):
-    if ext == '':
-        ext = get_ext(f)
-    return re.sub(r'\.({}|{}\.gz)$'.format(
-        ext, ext), '', str(f))
-
-
-def get_ext(f):
-    f_wo_gz = re.sub(r'\.gz$', '', str(f))
-    return f_wo_gz.split('.')[-1]
-
+# ----------- Read/Write and Formatting Utilities -----------
 
 def human_readable_number(num):
+    """Format a number with human-readable suffix (e.g., K, M)."""
     for unit in ['', 'K', 'M', 'G', 'T', 'P']:
         if abs(num) < 1000:
             return '{}{}'.format(num, unit)
-        num = int(num/1000.0)
-    return '{}{}'.format(num, 'E')
-
+        num = int(num / 1000.0)
+    return '{}E'.format(num)
 
 def human_readable_filesize(num):
+    """Format a byte count into a human-readable string."""
     for unit in ['', 'KB', 'MB', 'GB', 'TB', 'PB']:
         if abs(num) < 1024.0:
             return '{}{}'.format(num, unit)
-        num = int(num/1024.0)
-    return '{}{}'.format(num, 'EB')
-
+        num = int(num / 1024.0)
+    return '{}EB'.format(num)
 
 def read_tsv(tsv):
+    """Read a tab-separated file into a list of lists."""
     result = []
     with open(tsv, 'r') as fp:
         for row in csv.reader(fp, delimiter='\t'):
-            if len(row) == 0:
-                row = ['']
-            result.append(row)
+            result.append(row if row else [''])
     return result
 
-
-def write_tsv(tsv, arr):  # arr must be list of list of something
+def write_tsv(tsv, arr):
+    """Write a list of lists to a tab-separated file."""
     with open(tsv, 'w') as fp:
         for i, arr2 in enumerate(arr):
-            s = '\t'.join([str(a) for a in arr2]) \
-                + ('\n' if i < len(arr)-1 else '')
-            fp.write(s)
+            line = '\t'.join([str(a) for a in arr2])
+            line += '\n' if i < len(arr) - 1 else ''
+            fp.write(line)
 
+def write_txt(f, s):
+    """Write a string or list of strings to a text file."""
+    with open(f, 'w') as fp:
+        arr = [s] if type(s) != list else s
+        for a in arr:
+            fp.write(str(a) + '\n')
+
+# ----------- Filesystem Utilities -----------
 
 def mkdir_p(dirname):
+    """Create a directory if it does not exist."""
     if dirname and not os.path.exists(dirname):
         os.makedirs(dirname)
 
-
-def untar(tar, out_dir):
-    if tar.endswith('.gz'):
-        cmd = 'tar zxvf {} --no-same-owner -C {}'.format(
-            tar,
-            out_dir if out_dir else '.')
-    else:
-        cmd = 'tar xvf {} --no-same-owner -C {}'
-    cmd = cmd.format(
-        tar,
-        out_dir if out_dir else '.'
-    )
-    run_shell_cmd(cmd)
-
-
-def gunzip(f, suffix, out_dir):
-    if not f.endswith('.gz'):
-        raise Exception('Cannot gunzip a file without .gz extension.')
-    gunzipped = os.path.join(out_dir,
-                             os.path.basename(strip_ext_gz(f)))
-    if suffix:
-        gunzipped += '.{}'.format(suffix)
-    # cmd = 'gzip -cd {} > {}'.format(f, gunzipped)
-    cmd = 'zcat -f {} > {}'.format(f, gunzipped)
-    run_shell_cmd(cmd)
-    return gunzipped
-
+def rm_f(files):
+    """Remove one or more files."""
+    if files:
+        cmd = 'rm -f {}'.format(' '.join(files)) if isinstance(files, list) else f'rm -f {files}'
+        run_shell_cmd(cmd)
 
 def ls_l(d):
+    """Run ls -l on a directory."""
     cmd = 'ls -l {}'.format(d)
     run_shell_cmd(cmd)
 
-
-def rm_f(files):
-    if files:
-        if type(files) == list:
-            run_shell_cmd('rm -f {}'.format(' '.join(files)))
-        else:
-            run_shell_cmd('rm -f {}'.format(files))
-
-
 def touch(f):
+    """Create an empty file or update its timestamp."""
     run_shell_cmd('touch {}'.format(f))
 
+# ----------- Compression Utilities -----------
+
+def gunzip(f, suffix, out_dir):
+    """Uncompress .gz file to out_dir with optional suffix."""
+    if not f.endswith('.gz'):
+        raise Exception('Cannot gunzip a file without .gz extension.')
+    gunzipped = os.path.join(out_dir, os.path.basename(strip_ext_gz(f)))
+    if suffix:
+        gunzipped += f'.{suffix}'
+    run_shell_cmd(f'zcat -f {f} > {gunzipped}')
+    return gunzipped
+
+def untar(tar, out_dir):
+    """Extract tar or tar.gz archive to a given directory."""
+    cmd = 'tar zxvf {} --no-same-owner -C {}'.format(tar, out_dir or '.') if tar.endswith('.gz') \
+        else 'tar xvf {} --no-same-owner -C {}'.format(tar, out_dir or '.')
+    run_shell_cmd(cmd)
+
+# ----------- File Checks -----------
 
 def get_num_lines(f):
-    cmd = 'zcat -f {} | wc -l'.format(f)
-    return int(run_shell_cmd(cmd))
-
+    """Return number of lines in a (possibly gzipped) file."""
+    return int(run_shell_cmd(f'zcat -f {f} | wc -l'))
 
 def assert_file_not_empty(f, help=''):
+    """Check if file exists and is not empty."""
     if not os.path.exists(f):
-        raise Exception('File does not exist ({}). Help: {}'.format(f, help))
+        raise Exception(f'File does not exist ({f}). Help: {help}')
     elif get_num_lines(f) == 0:
-        raise Exception('File is empty ({}). Help: {}'.format(f, help))
+        raise Exception(f'File is empty ({f}). Help: {help}')
 
+# ----------- Linking and Copying -----------
 
-def write_txt(f, s):
-    with open(f, 'w') as fp:
-        if type(s) != list:
-            arr = [s]
-        else:
-            arr = s
-        for a in arr:
-            fp.write(str(a)+'\n')
-
-
-def hard_link(f, link):  # hard-link 'f' to 'link'
-    # UNIX only
+def hard_link(f, link):
+    """Create a hard link to a file."""
     if os.path.abspath(f) == os.path.abspath(link):
-        raise Exception('Trying to hard-link itself. {}'.format(f))
+        raise Exception(f'Trying to hard-link itself. {f}')
     os.link(f, link)
     return link
 
-
-def make_hard_link(f, out_dir):  # hard-link 'f' to 'out_dir'/'f'
-    # UNIX only
-    if os.path.dirname(f) == os.path.dirname(out_dir):
-        raise Exception('Trying to hard-link itself. {}'.format(f))
+def make_hard_link(f, out_dir):
+    """Create a hard link in a specified directory."""
     linked = os.path.join(out_dir, os.path.basename(f))
     rm_f(linked)
-    os.link(f, linked)
-    return linked
+    return hard_link(f, linked)
 
-
-def soft_link(f, link):  # soft-link 'f' to 'link'
-    # UNIX only
+def soft_link(f, link):
+    """Create a symbolic (soft) link."""
     if os.path.abspath(f) == os.path.abspath(link):
-        raise Exception('Trying to soft-link itself. {}'.format(f))
+        raise Exception(f'Trying to soft-link itself. {f}')
     os.symlink(f, link)
     return link
 
-
-def make_soft_link(f, out_dir):  # soft-link 'f' to 'out_dir'/'f'
-    # UNIX only
-    if os.path.dirname(f) == os.path.dirname(out_dir):
-        raise Exception('Trying to soft-link itself. {}'.format(f))
+def make_soft_link(f, out_dir):
+    """Create a soft link in the specified directory."""
     linked = os.path.join(out_dir, os.path.basename(f))
     rm_f(linked)
-    os.symlink(f, linked)
-    return linked
+    return soft_link(f, linked)
 
-
-def copy_f_to_f(f, dest):  # copy 'f' to 'out_dir'/'f'
+def copy_f_to_f(f, dest):
+    """Copy a file to a destination path."""
     if os.path.abspath(f) == os.path.abspath(dest):
-        raise Exception('Trying to copy to itself. {}'.format(f))
-    cmd = 'cp -f {} {}'.format(f, dest)
-    run_shell_cmd(cmd)
+        raise Exception(f'Trying to copy to itself. {f}')
+    run_shell_cmd(f'cp -f {f} {dest}')
     return dest
 
-
-def copy_f_to_dir(f, out_dir):  # copy 'f' to 'out_dir'/'f'
-    out_dir = os.path.abspath(out_dir)
-    if not os.path.isdir(out_dir):
-        raise Exception('Invalid destination directory {}.'.format(out_dir))
+def copy_f_to_dir(f, out_dir):
+    """Copy a file into a directory."""
     dest = os.path.join(out_dir, os.path.basename(f))
     return copy_f_to_f(f, dest)
 
+# ----------- Sorting Helpers -----------
 
 def get_gnu_sort_param(max_mem_job, ratio=0.5):
-    """Get a string of parameters for GNU sort according to maximum memory of a job/instance.
-
-    For GNU `sort`, `-S` or `--buffer-size` defines the buffer size for the sorting,
-    which defaults to max(available_mem, 1/8 * total_mem) of a node/instance.
-
-    sort -S [SIZE][UNIT] ...
-
-    See the following link for details.
-    https://github.com/coreutils/coreutils/blob/master/src/sort.c#L1492
-
-    This can be a problem if a job is assigned with a limited amount of memory,
-    but the job runs on a large node (e.g. 256GB of memory).
-
-    `-S` defines an INITIAL buffer size and it will automatically grow
-    if more memory is needed by `sort`.
-
-
-    Args:
-        max_mem_job:
-            Maximum amount of memory for a job/instance in bytes.
-        ratio:
-            Ratio to define the buffer size according to `max_mem_job`.
-    """
+    """Compute memory size parameter for GNU sort based on max memory."""
     mem_mb = int(math.ceil(max_mem_job * ratio / (1024 * 1024)))
-    return '-S {mem_mb}M'.format(mem_mb=mem_mb)
+    return f'-S {mem_mb}M'
 
+# ----------- Time and Conversion -----------
 
 def now():
+    """Return current timestamp as string."""
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
-
 def pdf2png(pdf, out_dir):
-    prefix = os.path.join(out_dir,
-                          os.path.basename(strip_ext(pdf)))
-    png = '{}.png'.format(prefix)
-
-    cmd = 'gs -dFirstPage=1 -dLastPage=1 -dTextAlphaBits=4 '
-    cmd += '-dGraphicsAlphaBits=4 -r110x110 -dUseCropBox -dQUIET '
-    cmd += '-dSAFER -dBATCH -dNOPAUSE -dNOPROMPT -sDEVICE=png16m '
-    cmd += '-sOutputFile={} -r144 {}'
-    cmd = cmd.format(
-        png,
-        pdf)
-    run_shell_cmd(cmd)
-    return png
-
-
-def run_shell_cmd(cmd):
-    p = subprocess.Popen(
-        ['/bin/bash', '-o', 'pipefail'],  # to catch error in pipe
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
-        preexec_fn=os.setsid)  # to make a new process with a new PGID
-    pid = p.pid
-    pgid = os.getpgid(pid)
-    log.info('run_shell_cmd: PID={}, PGID={}, CMD={}'.format(pid, pgid, cmd))
-    t0 = get_ticks()
-    stdout, stderr = p.communicate(cmd)
-    rc = p.returncode
-    t1 = get_ticks()
-    err_str = (
-        'PID={pid}, PGID={pgid}, RC={rc}, DURATION_SEC={dur:.1f}\n'
-        'STDERR={stde}\nSTDOUT={stdo}'
-    ).format(
-        pid=pid, pgid=pgid, rc=rc, dur=t1 - t0, stde=stderr.strip(), stdo=stdout.strip()
-    )
-    if rc:
-        # kill all child processes
-        try:
-            os.killpg(pgid, signal.SIGKILL)
-        except:
-            pass
-        finally:
-            raise Exception(err_str)
-    else:
-        log.info(err_str)
-    return stdout.strip('\n')
-
-# math
-
-
-def nCr(n, r):  # combination
-    return math.factorial(n)/math.factorial(r)/math.factorial(n-r)
-
-
-def infer_n_from_nC2(nC2):  # calculate n from nC2
-    if nC2:
-        n = 2
-        while(nCr(n, 2) != nC2):
-            n += 1
-            if n > 99:
-                raise argparse.ArgumentTypeError(
-                    'Cannot infer n from nC2. ' +
-                    'wrong number of peakfiles ' +
-                    'in command line arg. (--peaks)?')
-        return n
-    else:
-        return 1
-
-
-def infer_pair_label_from_idx(n, idx, prefix='rep'):
-    cnt = 0
-    for i in range(n):
-        for j in range(i+1, n):
-            if idx == cnt:
-                return '{}{}_vs_{}{}'.format(
-                    prefix, i+1, prefix, j+1)
-            cnt += 1
-    raise argparse.ArgumentTypeError(
-        'Cannot infer rep_id from n and idx.')
-
-
-def which(executable):
-    return run_shell_cmd('which {}'.format(executable))
+    """Convert first page of a PDF file to PNG image."""
+    prefix = os.path.join(out_dir, os.path.basename(strip_ext(pdf)))
+    png = f'{prefix}.png'
+    cmd = ('gs -dFirst
