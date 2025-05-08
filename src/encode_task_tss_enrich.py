@@ -1,26 +1,33 @@
 #!/usr/bin/env python
 
-
+# Import necessary libraries for genomic data analysis, plotting, and logging
 import matplotlib as mpl
-mpl.use('Agg')
-import pybedtools
-import numpy as np
-from matplotlib import mlab
-from matplotlib import pyplot as plt
-import sys
-import os
-import argparse
+mpl.use('Agg')  # Use Agg backend for matplotlib (for script-based plotting without a GUI)
+import pybedtools  # For working with BED files
+import numpy as np  # Numerical computations
+from matplotlib import mlab  # For computing percentiles
+from matplotlib import pyplot as plt  # For plotting
+import sys  # System-specific parameters
+import os  # For file system operations
+import argparse  # Argument parsing for command-line options
 from encode_lib_common import (
-    strip_ext_bam, ls_l, log, logging, mkdir_p, rm_f)
+    strip_ext_bam, ls_l, log, logging, mkdir_p, rm_f)  # Utility functions
 from encode_lib_genomic import (
-    remove_read_group, samtools_index)
-import metaseq
+    remove_read_group, samtools_index)  # Genomic utilities (e.g., removing read groups)
+import metaseq  # A library for metagenomic signal processing
 import warnings
-warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore")  # Ignore warnings (e.g., in plotting or data processing)
 
 
 def parse_arguments():
+    """
+    Parse the command-line arguments to set up the parameters for the script.
+    The arguments control various aspects like input files, output directories,
+    and specific analysis options.
+    """
     parser = argparse.ArgumentParser(prog='ENCODE TSS enrichment.')
+    
+    # Define command-line arguments
     parser.add_argument('--read-len-log', type=str,
                         help='Read length log file (from aligner task).')
     parser.add_argument('--read-len', type=int,
@@ -36,67 +43,90 @@ def parse_arguments():
     parser.add_argument('--log-level', default='INFO', help='Log level',
                         choices=['NOTSET', 'DEBUG', 'INFO', 'WARNING',
                                  'CRITICAL', 'ERROR', 'CRITICAL'])
+
+    # Parse arguments from the command line
     args = parser.parse_args()
 
+    # Ensure that either read_len_log or read_len is defined
     if args.read_len_log is None and args.read_len is None:
         raise ValueError('Either --read-len-log or --read-len must be defined.')
 
+    # Set the logging level and log the command used to run the script
     log.setLevel(args.log_level)
     log.info(sys.argv)
+
     return args
 
 
 def make_tss_plot(bam_file, tss, prefix, chromsizes,
                   read_len, bins=400, bp_edge=2000,
                   processes=8, greenleaf_norm=True):
-    '''
-    Take bootstraps, generate tss plots, and get a mean and
-    standard deviation on the plot. Produces 2 plots. One is the
-    aggregation plot alone, while the other also shows the signal
-    at each TSS ordered by strength.
-    '''
-    logging.info('Generating tss plot...')
+    """
+    Generate TSS enrichment plots. This function computes the TSS enrichment
+    around the transcription start sites (TSS) and creates two plots: 
+    one showing the aggregation plot and another showing the signal strength at each TSS.
+    It also computes and returns the mean and standard deviation of the plot.
+
+    Parameters:
+        bam_file (str): The BAM file containing aligned reads.
+        tss (str): The BED file defining the TSS positions.
+        prefix (str): Output file prefix for generated plots.
+        chromsizes (str): The chromosome sizes file (for binning).
+        read_len (int): The length of the reads in the BAM file.
+        bins (int): Number of bins to use in plotting.
+        bp_edge (int): The number of base pairs to extend beyond the TSS.
+        processes (int): Number of processes to parallelize the computation.
+        greenleaf_norm (bool): Whether to use Greenleaf-style normalization.
+
+    Returns:
+        tuple: Paths to the generated plot files (small plot, large plot, log file).
+    """
+    logging.info('Generating TSS plot...')
+    
+    # Set file names for the TSS enrichment plots and QC log
     tss_plot_file = '{0}.tss_enrich.png'.format(prefix)
     tss_plot_large_file = '{0}.large_tss_enrich.png'.format(prefix)
     tss_log_file = '{0}.tss_enrich.qc'.format(prefix)
 
-    # Load the TSS file
+    # Load the TSS file using pybedtools (BED file)
     tss = pybedtools.BedTool(tss)
-    tss_ext = tss.slop(b=bp_edge, g=chromsizes)
+    tss_ext = tss.slop(b=bp_edge, g=chromsizes)  # Extend TSS regions by bp_edge on both sides
 
-    # Load the bam file
-    # Need to shift reads and just get ends, just load bed file?
+    # Load BAM file using metaseq to generate genomic signal (aligned read data)
     bam = metaseq.genomic_signal(bam_file, 'bam')
-    # Shift to center the read on the cut site
+    
+    # Shift the reads so that the center is aligned with the cut site of the TSS
     bam_array = bam.array(tss_ext, bins=bins, shift_width=-read_len/2,
                           processes=processes, stranded=True)
-    # Normalization (Greenleaf style): Find the avg height
-    # at the end bins and take fold change over that
+
+    # Apply Greenleaf normalization (optional) to adjust for noise in the bins
     if greenleaf_norm:
-        # Use enough bins to cover 100 bp on either end
+        # Use enough bins to cover 100 bp at the ends of the region (signal noise)
         num_edge_bins = int(100/(2*bp_edge/bins))
         bin_means = bam_array.mean(axis=0)
         avg_noise = (sum(bin_means[:num_edge_bins]) +
                      sum(bin_means[-num_edge_bins:]))/(2*num_edge_bins)
-        bam_array /= avg_noise
+        bam_array /= avg_noise  # Normalize by average noise
     else:
+        # If not Greenleaf norm, normalize by mapped read count
         bam_array /= bam.mapped_read_count() / 1e6
 
-    # Generate a line plot
+    # Plot the TSS enrichment
     fig = plt.figure()
     ax = fig.add_subplot(111)
     x = np.linspace(-bp_edge, bp_edge, bins)
 
     ax.plot(x, bam_array.mean(axis=0), color='r', label='Mean')
-    ax.axvline(0, linestyle=':', color='k')
+    ax.axvline(0, linestyle=':', color='k')  # TSS marker at 0
 
-    # Note the middle high point (TSS)
+    # Find the peak of the TSS enrichment (max value)
     tss_point_val = max(bam_array.mean(axis=0))
 
-    # write tss_point_val to file
+    # Write the peak value to a log file
     with open(tss_log_file, 'w') as fp:
         fp.write(str(tss_point_val))
 
+    # Set labels for the plot
     ax.set_xlabel('Distance from TSS (bp)')
     if greenleaf_norm:
         ax.set_ylabel('TSS Enrichment')
@@ -104,15 +134,15 @@ def make_tss_plot(bam_file, tss, prefix, chromsizes,
         ax.set_ylabel('Average read coverage (per million mapped reads)')
     ax.legend(loc='best')
 
+    # Save the smaller TSS plot
     fig.savefig(tss_plot_file)
 
-    # Print a more complicated plot with lots of info
-
-    # Find a safe upper percentile - we can't use X if the Xth percentile is 0
+    # Generate a more detailed plot with more information
     upper_prct = 99
     if mlab.prctile(bam_array.ravel(), upper_prct) == 0.0:
         upper_prct = 100.0
 
+    # Use metaseq to generate a detailed plot
     plt.rcParams['font.size'] = 8
     fig = metaseq.plotutils.imshow(bam_array,
                                    x=x,
@@ -122,30 +152,39 @@ def make_tss_plot(bam_file, tss, prefix, chromsizes,
                                    fill_kwargs=dict(color='k', alpha=0.3),
                                    sort_by=bam_array.mean(axis=1))
 
-    # And save the file
+    # Save the detailed plot
     fig.savefig(tss_plot_large_file)
 
     return tss_plot_file, tss_plot_large_file, tss_log_file
 
 
 def main():
-    # read params
+    """
+    Main function that coordinates the execution of the script. It parses arguments,
+    processes the input BAM file, generates TSS enrichment plots, and saves the results.
+    """
+    # Parse the command-line arguments
     args = parse_arguments()
 
+    # Assign input arguments to variables for easier reference
     CHROMSIZES = args.chrsz
     TSS = args.tss if args.tss and os.path.basename(args.tss) != 'null' else ''
     FINAL_BAM = args.nodup_bam
     OUTPUT_PREFIX = os.path.join(
         args.out_dir,
         os.path.basename(strip_ext_bam(FINAL_BAM)))
-    samtools_index(FINAL_BAM)  # make an index first
+    
+    # Index the BAM file (to prepare for random access during processing)
+    samtools_index(FINAL_BAM)
+
+    # Remove the read group from the BAM file (clean up for analysis)
     RG_FREE_FINAL_BAM = remove_read_group(FINAL_BAM)
 
+    # Initialize the output directory
     log.info('Initializing and making output directory...')
     mkdir_p(args.out_dir)
 
-    # Also get read length
-    # read_len = get_read_length(FASTQ)
+    # Retrieve the read length (either from log file or argument)
     if args.read_len_log:
         with open(args.read_len_log, 'r') as fp:
             read_len = int(fp.read().strip())
@@ -154,8 +193,7 @@ def main():
     else:
         read_len = None
 
-    # Enrichments: V plot for enrichment
-    # Use final to avoid duplicates
+    # Generate TSS enrichment plots and log the results
     tss_plot, tss_large_plot, tss_enrich_qc = \
         make_tss_plot(FINAL_BAM,
                       TSS,
@@ -163,14 +201,16 @@ def main():
                       CHROMSIZES,
                       read_len)
 
-    # remove temporary files
+    # Remove the temporary BAM file without read group
     rm_f(RG_FREE_FINAL_BAM)
 
+    # List all files in the output directory
     log.info('List all files in output directory...')
     ls_l(args.out_dir)
 
+    # Indicate completion of the process
     log.info('All done.')
 
 
 if __name__ == '__main__':
-    main()
+    main()  # Run the main function when the script is executed
