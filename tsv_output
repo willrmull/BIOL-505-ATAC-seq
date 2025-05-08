@@ -1,5 +1,0 @@
-genome_name\tdp
-ref_fa\t/kuhpc/home/c957g301/project/output.dir/ref.fa
-chrsz\t/kuhpc/home/c957g301/project/output.dir/dp.chrom.sizes
-regex_bfilt_peak_chr_name\t^>NC_[^\s]+.*?(chromosome \d+|chromosome [A-Z])
-bowtie2_index\t/kuhpc/home/c957g301/project/output.dir/bowtie2_index
