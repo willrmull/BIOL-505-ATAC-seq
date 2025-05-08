@@ -1,25 +1,25 @@
 #!/usr/bin/env python
 
-
-import sys
-import os
-import re
-import argparse
+# Import necessary libraries and modules
+import sys  # Provides access to system-specific parameters and functions
+import os  # For interacting with the operating system (file manipulation, paths, etc.)
+import re  # Regular expression handling
+import argparse  # For handling command-line arguments
 from encode_lib_common import (
     get_num_lines, log, ls_l, mkdir_p, rm_f, run_shell_cmd, strip_ext_fastq,
-    strip_ext_tar, untar,
-    get_gnu_sort_param,
+    strip_ext_tar, untar, get_gnu_sort_param,
 )
 from encode_lib_genomic import (
     get_read_length, samtools_sort, bam_is_empty, get_samtools_res_param)
 
-
+# Function to parse command-line arguments
 def parse_arguments():
-    parser = argparse.ArgumentParser(prog='ENCODE DCC bwa aligner.',
-                                     description='')
+    # Create the argument parser
+    parser = argparse.ArgumentParser(prog='ENCODE DCC bwa aligner.', description='')
+
+    # Define the arguments the script will accept
     parser.add_argument('bwa_index_prefix_or_tar', type=str,
-                        help='Path for prefix (or a tarball .tar) \
-                            for reference bwa index. \
+                        help='Path for prefix (or a tarball .tar) for reference bwa index. \
                             Prefix must be like [PREFIX].sa. \
                             TAR ball can have any [PREFIX] but it should not \
                             have a directory structure in it.')
@@ -55,47 +55,48 @@ def parse_arguments():
                         help='Log level')
     args = parser.parse_args()
 
-    # check if fastqs have correct dimension
+    # Check if the fastqs have the correct dimension
     if args.paired_end and len(args.fastqs) != 2:
         raise argparse.ArgumentTypeError('Need 2 fastqs for paired end.')
     if not args.paired_end and len(args.fastqs) != 1:
         raise argparse.ArgumentTypeError('Need 1 fastq for single end.')
 
+    # Validation for specific options
     if args.use_bwa_mem_for_pe and not args.paired_end:
-        raise ValueError(
-            '--use-bwa-mem-for-pe is for paired ended FASTQs only.'
-        )
+        raise ValueError('--use-bwa-mem-for-pe is for paired-ended FASTQs only.')
     if not args.use_bwa_mem_for_pe and args.rescue_reads_for_bwa_mem:
-        raise ValueError(
-            '--rescue-reads-for-bwa-mem is available only when --use-bwa-mem-for-pe is activated.'
-        )
+        raise ValueError('--rescue-reads-for-bwa-mem is available only when --use-bwa-mem-for-pe is activated.')
 
+    # Set up logging level
     log.setLevel(args.log_level)
-    log.info(sys.argv)
-    return args
+    log.info(sys.argv)  # Log the command-line arguments used to run the script
+    return args  # Return the parsed arguments
 
-
+# Function for running bwa aln for single-end
 def bwa_aln(fastq, ref_index_prefix, nth, out_dir):
-    basename = os.path.basename(strip_ext_fastq(fastq))
-    prefix = os.path.join(out_dir, basename)
-    sai = '{}.sai'.format(prefix)
+    basename = os.path.basename(strip_ext_fastq(fastq))  # Get the base name without the extension
+    prefix = os.path.join(out_dir, basename)  # Path to output directory
+    sai = '{}.sai'.format(prefix)  # Output file for the SAI (sequential alignment index)
 
+    # Build the BWA aln command
     cmd = 'bwa aln -q 5 -l 32 -k 2 -t {nth} {ref} {fastq} > {sai}'.format(
         nth=nth,
         ref=ref_index_prefix,
         fastq=fastq,
         sai=sai)
-    run_shell_cmd(cmd)
-    return sai
+    run_shell_cmd(cmd)  # Run the command in the shell
+    return sai  # Return the path to the SAI file
 
-
+# Function for single-end alignment using bwa
 def bwa_se(fastq, ref_index_prefix, nth, mem_gb, out_dir):
-    basename = os.path.basename(strip_ext_fastq(fastq))
-    prefix = os.path.join(out_dir, basename)
-    tmp_bam = '{}.bam'.format(prefix)
+    basename = os.path.basename(strip_ext_fastq(fastq))  # Get the base name of the fastq file
+    prefix = os.path.join(out_dir, basename)  # Path to output directory
+    tmp_bam = '{}.bam'.format(prefix)  # Temporary BAM file
 
+    # Run bwa aln to generate the SAI file
     sai = bwa_aln(fastq, ref_index_prefix, nth, out_dir)
 
+    # Run bwa samse to generate a SAM file, then convert it to BAM format using samtools
     run_shell_cmd(
         'bwa samse {ref} {sai} {fastq} | '
         'samtools view -bS /dev/stdin {res_param} > {tmp_bam}'.format(
@@ -106,33 +107,33 @@ def bwa_se(fastq, ref_index_prefix, nth, mem_gb, out_dir):
             tmp_bam=tmp_bam,
         )
     )
-    rm_f(sai)
+    rm_f(sai)  # Remove the SAI file
 
+    # Sort the BAM file using samtools
     bam = samtools_sort(tmp_bam, nth, mem_gb)
-    rm_f(tmp_bam)
+    rm_f(tmp_bam)  # Remove the temporary BAM file
 
-    return bam
+    return bam  # Return the path to the sorted BAM file
 
-
+# Function for paired-end alignment using bwa
 def bwa_pe(fastq1, fastq2, ref_index_prefix, nth, mem_gb, use_bwa_mem_for_pe,
            bwa_mem_read_len_limit, rescue_reads_for_bwa_mem, out_dir):
-    basename = os.path.basename(strip_ext_fastq(fastq1))
-    prefix = os.path.join(out_dir, basename)
-    sam = '{}.sam'.format(prefix)
-    badcigar = '{}.badReads'.format(prefix)
-    bam = '{}.bam'.format(prefix)
+    basename = os.path.basename(strip_ext_fastq(fastq1))  # Get the base name of the first fastq file
+    prefix = os.path.join(out_dir, basename)  # Path to output directory
+    sam = '{}.sam'.format(prefix)  # SAM file
+    badcigar = '{}.badReads'.format(prefix)  # File for bad CIGAR reads
+    bam = '{}.bam'.format(prefix)  # Output BAM file
 
-    temp_files = []
-    read_len = get_read_length(fastq1)
+    temp_files = []  # Temporary files to delete later
+    read_len = get_read_length(fastq1)  # Get the read length of the first fastq file
 
-    log.info(
-        'Guessed read length of R1 FASTQ: {read_len}'.format(
-            read_len=read_len,
-        )
-    )
+    log.info('Guessed read length of R1 FASTQ: {read_len}'.format(read_len=read_len))
+
+    # Choose bwa mem or bwa aln based on read length
     if use_bwa_mem_for_pe and read_len >= bwa_mem_read_len_limit:
-        log.info('Use bwa mem.')
+        log.info('Using bwa mem.')
 
+        # Build and run the bwa mem command
         cmd = 'bwa mem -M {extra_param} -t {nth} {ref_index_prefix} {fastq1} {fastq2} | gzip -nc > {sam}'.format(
             extra_param='-P' if rescue_reads_for_bwa_mem else '',
             nth=nth,
@@ -142,12 +143,14 @@ def bwa_pe(fastq1, fastq2, ref_index_prefix, nth, mem_gb, use_bwa_mem_for_pe,
             sam=sam,
         )
         temp_files.append(sam)
-
     else:
-        log.info('Use bwa aln for each (R1 and R2) and then bwa sampe.')
+        log.info('Using bwa aln for each (R1 and R2) and then bwa sampe.')
+
+        # Generate SAI files for both fastq1 and fastq2
         sai1 = bwa_aln(fastq1, ref_index_prefix, nth, out_dir)
         sai2 = bwa_aln(fastq2, ref_index_prefix, nth, out_dir)
 
+        # Build and run the bwa sampe command
         cmd = 'bwa sampe {ref_index_prefix} {sai1} {sai2} {fastq1} {fastq2} | gzip -nc > {sam}'.format(
             ref_index_prefix=ref_index_prefix,
             sai1=sai1,
@@ -157,8 +160,10 @@ def bwa_pe(fastq1, fastq2, ref_index_prefix, nth, mem_gb, use_bwa_mem_for_pe,
             sam=sam,
         )
         temp_files.extend([sai1, sai2, sam])
-    run_shell_cmd(cmd)
 
+    run_shell_cmd(cmd)  # Run the bwa sampe or mem command
+
+    # Check for bad CIGAR reads and remove them
     run_shell_cmd(
         'zcat -f {sam} | '
         'awk \'BEGIN {{FS="\\t" ; OFS="\\t"}} ! /^@/ && $6!="*" '
@@ -173,7 +178,7 @@ def bwa_pe(fastq1, fastq2, ref_index_prefix, nth, mem_gb, use_bwa_mem_for_pe,
         )
     )
 
-    # Remove bad CIGAR read pairs
+    # If bad CIGAR reads exist, remove them
     if get_num_lines(badcigar) > 0:
         run_shell_cmd(
             'zcat -f {sam} | grep -v -F -f {badcigar} | '
@@ -186,6 +191,7 @@ def bwa_pe(fastq1, fastq2, ref_index_prefix, nth, mem_gb, use_bwa_mem_for_pe,
             )
         )
     else:
+        # If no bad CIGAR reads, sort directly
         run_shell_cmd(
             'samtools view -Su {sam} | samtools sort /dev/stdin -o {bam} -T {prefix} {res_param}'.format(
                 sam=sam,
@@ -195,21 +201,19 @@ def bwa_pe(fastq1, fastq2, ref_index_prefix, nth, mem_gb, use_bwa_mem_for_pe,
             )
         )
 
-    rm_f(temp_files)
-    return bam
+    rm_f(temp_files)  # Remove all temporary files
+    return bam  # Return the final BAM file
 
-
+# Function to check if the BWA index exists
 def chk_bwa_index(prefix):
     index_sa = '{}.sa'.format(prefix)
     if not os.path.exists(index_sa):
-        raise Exception("bwa index does not exists. " +
-                        "Prefix = {}".format(prefix))
+        raise Exception("BWA index does not exist. Prefix = {}".format(prefix))
 
-
+# Function to find the BWA index prefix in a directory
 def find_bwa_index_prefix(d):
     """
-    Returns:
-        prefix of BWA index. e.g. returns PREFIX if PREFIX.sa exists
+    Returns the prefix of BWA index, e.g., returns PREFIX if PREFIX.sa exists
     Args:
         d: directory to search for .sa file
     """
@@ -220,34 +224,33 @@ def find_bwa_index_prefix(d):
             return re.sub('\.sa$', '', f)
     return None
 
-
+# Main function to orchestrate the bwa alignment
 def main():
-    # read params
+    # Read parameters from command-line arguments
     args = parse_arguments()
 
+    # Log the initialization process
     log.info('Initializing and making output directory...')
     mkdir_p(args.out_dir)
 
-    # declare temp arrays
-    temp_files = []  # files to deleted later at the end
+    # Declare temp arrays for files to delete later
+    temp_files = []
 
-    # if bwa index is tarball then unpack it
+    # If the bwa index is a tarball, unpack it
     if args.bwa_index_prefix_or_tar.endswith('.tar') or \
             args.bwa_index_prefix_or_tar.endswith('.tar.gz'):
         log.info('Unpacking bwa index tar...')
         tar = args.bwa_index_prefix_or_tar
-        # untar
-        untar(tar, args.out_dir)
-        bwa_index_prefix = find_bwa_index_prefix(args.out_dir)
-        temp_files.append('{}*'.format(
-            bwa_index_prefix))
+        untar(tar, args.out_dir)  # Extract the tarball
+        bwa_index_prefix = find_bwa_index_prefix(args.out_dir)  # Find the prefix in the output directory
+        temp_files.append('{}*'.format(bwa_index_prefix))
     else:
         bwa_index_prefix = args.bwa_index_prefix_or_tar
 
-    # check if bowties indices are unpacked on out_dir
+    # Check if the BWA index exists
     chk_bwa_index(bwa_index_prefix)
 
-    # bwa
+    # Run bwa alignment
     log.info('Running bwa...')
     if args.paired_end:
         bam = bwa_pe(
@@ -261,18 +264,21 @@ def main():
             bwa_index_prefix, args.nth, args.mem_gb,
             args.out_dir)
 
+    # Log removal of temporary files
     log.info('Removing temporary files...')
     rm_f(temp_files)
 
+    # Check if BAM file is empty
     log.info('Checking if BAM file is empty...')
     if bam_is_empty(bam, args.nth):
         raise ValueError('BAM file is empty, no reads found.')
 
+    # List all files in the output directory
     log.info('List all files in output directory...')
     ls_l(args.out_dir)
 
     log.info('All done.')
 
-
+# Ensure the script runs when executed directly
 if __name__ == '__main__':
     main()
