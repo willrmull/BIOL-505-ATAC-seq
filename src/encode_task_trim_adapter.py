@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-# ENCODE DCC adapter trimmer wrapper
-# Author: Jin Lee (leepc12@gmail.com)
 
 import sys
 import os
